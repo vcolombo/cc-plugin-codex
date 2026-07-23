@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -52,7 +52,9 @@ export function gateFlagPath(dataDir) {
 // temp file; rename() replaces the destination entry without following it.
 export function writeJsonAtomic(path, obj) {
   ensureDir(dirname(path));
-  const tmp = `${path}.${process.pid}.tmp`;
+  // Unpredictable temp name: 'wx' is symlink-safe, and randomness means a stale
+  // temp left by a crash (or a reused pid) can never collide and block writes.
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);

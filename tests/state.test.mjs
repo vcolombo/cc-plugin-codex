@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, statSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -45,6 +45,15 @@ test('writeJsonAtomic creates 0700 dirs, 0600 file, round-trips', () => {
   assert.deepEqual(readJson(p), { a: 1 });
   assert.equal(statSync(p).mode & 0o777, 0o600);
   assert.equal(statSync(join(dir, 'sub')).mode & 0o777, 0o700);
+});
+
+test('writeJsonAtomic is not blocked by a stale predictable temp file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'state-'));
+  const p = join(dir, 'r.json');
+  // A leftover temp from a crashed writer using the old deterministic name.
+  writeFileSync(`${p}.${process.pid}.tmp`, 'stale');
+  writeJsonAtomic(p, { a: 2 }); // must not throw EEXIST
+  assert.deepEqual(readJson(p), { a: 2 });
 });
 
 test('readJson returns null on missing or invalid', () => {
