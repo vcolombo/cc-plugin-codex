@@ -10,11 +10,14 @@ tradeoffs, and risk areas, with an optional user-supplied focus. Read-only.
 
 ## Locating the plugin scripts
 
-Resolve the scripts directory once (single glob match expected):
+Codex runs every Bash tool call in a fresh shell — a variable set in one
+command is gone by the next. So the scripts-directory resolver MUST be
+prepended to every command that invokes a script, joined with `;` into a
+single command. Never run the resolver as a separate step. Canonical
+resolver (prefers this plugin's own marketplace cache before falling back to
+any same-named `claude` plugin from another marketplace):
 
-    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
-
-If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinstall the plugin.
+    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }
 
 ## Options (parse from the user's request)
 
@@ -26,9 +29,9 @@ If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinsta
 1. If the user gave focus text, write it VERBATIM to a temp file with your
    file-writing tool (never inline it into a shell command line), e.g.
    `/tmp/claude-focus.txt`.
-2. From the repository root:
+2. From the repository root (resolver and script call as ONE command):
 
-       node "$SCRIPTS/run-claude.mjs" review --adversarial [--base <ref>] [--background] < /tmp/claude-focus.txt
+       SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/run-claude.mjs" review --adversarial [--base <ref>] [--background] < /tmp/claude-focus.txt
 
    (use `< /dev/null` when there is no focus text)
 3. Relay findings verbatim, including the `Claude session:` line.

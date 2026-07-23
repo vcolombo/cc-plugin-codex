@@ -10,11 +10,14 @@ Runs Claude Code in a locked-down read-only mode over precomputed git evidence
 
 ## Locating the plugin scripts
 
-Resolve the scripts directory once (single glob match expected):
+Codex runs every Bash tool call in a fresh shell — a variable set in one
+command is gone by the next. So the scripts-directory resolver MUST be
+prepended to every command that invokes a script, joined with `;` into a
+single command. Never run the resolver as a separate step. Canonical
+resolver (prefers this plugin's own marketplace cache before falling back to
+any same-named `claude` plugin from another marketplace):
 
-    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
-
-If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinstall the plugin.
+    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }
 
 ## Options (parse from the user's request)
 
@@ -23,9 +26,9 @@ If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinsta
 
 ## Steps
 
-1. From the repository root, run exactly:
+1. From the repository root, run exactly (resolver and script call as ONE command):
 
-       node "$SCRIPTS/run-claude.mjs" review [--base <ref>] [--background] < /dev/null
+       SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/run-claude.mjs" review [--base <ref>] [--background] < /dev/null
 
 2. Foreground: relay Claude's findings verbatim, including the trailing
    `Claude session: <id>` line. Background: relay the printed job id and point
