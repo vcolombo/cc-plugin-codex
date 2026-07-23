@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -26,7 +26,10 @@ export function ensureDir(path) {
 }
 
 export function workspaceKey(cwd) {
-  return createHash('sha256').update(cwd).digest('hex').slice(0, 16);
+  // Normalize paths to handle symlinks (e.g., /var -> /private/var on macOS)
+  let normalized = cwd;
+  try { normalized = realpathSync(cwd); } catch { /* keep original if realpath fails */ }
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 }
 
 export function jobsDir(dataDir, cwd) {
