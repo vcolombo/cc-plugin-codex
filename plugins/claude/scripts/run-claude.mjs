@@ -6,6 +6,7 @@ import { buildReviewEvidence } from './lib/evidence.mjs';
 import { extractFromStream } from './lib/stream.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const TAIL_CAP = 2 * 1024 * 1024;
 
 export const REVIEW_PROMPT = `You are performing a strictly read-only code review from inside another agent's workflow.
 Evidence (git status, diffs, untracked files) is included below. You may use Read, Glob,
@@ -75,7 +76,7 @@ function runForeground(claudeArgs, prompt) {
   });
   child.stdin.end(prompt);
   let out = '';
-  child.stdout.on('data', (d) => { out += d; });
+  child.stdout.on('data', (d) => { out = (out + d).slice(-TAIL_CAP); }); // result event arrives last; only the tail matters
   child.on('close', (code) => {
     const { sessionId, result, isError } = extractFromStream(out);
     if (result) process.stdout.write(`${result}\n`);
