@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +60,35 @@ test('SIGTERM cancels and still finalizes', async () => {
   const rec = readJson(spec.recordPath);
   assert.equal(rec.status, 'cancelled');
   assert.ok(rec.endedAt);
+});
+
+test('SIGTERM cancels the whole process group, killing grandchildren', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir, {
+    FAKE_CLAUDE_SPAWN_GRANDCHILD: '1',
+    FAKE_CLAUDE_SLEEP_MS: '15000',
+  });
+  const sup = spawn('node', [SUP, specPath], { env });
+  await new Promise((resolve) => {
+    const t = setInterval(() => {
+      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
+    }, 100);
+  });
+  let gpid;
+  await new Promise((resolve, reject) => {
+    const started = Date.now();
+    const t = setInterval(() => {
+      const log = existsSync(spec.logPath) ? readFileSync(spec.logPath, 'utf8') : '';
+      const m = log.match(/"type":"grandchild","pid":(\d+)/);
+      if (m) { gpid = Number(m[1]); clearInterval(t); resolve(); }
+      else if (Date.now() - started > 5000) { clearInterval(t); reject(new Error('grandchild pid never appeared in log')); }
+    }, 50);
+  });
+  sup.kill('SIGTERM');
+  await new Promise((resolve) => sup.on('close', resolve));
+  assert.equal(readJson(spec.recordPath).status, 'cancelled');
+  await new Promise((resolve) => setTimeout(resolve, 500)); // let SIGTERM finish propagating
+  assert.throws(() => process.kill(gpid, 0), /ESRCH/);
 });
 
 test('missing prompt file still finalizes the record as failed', () => {

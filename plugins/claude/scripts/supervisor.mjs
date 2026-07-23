@@ -18,13 +18,35 @@ if (!spec) {
   process.exit(2);
 }
 
+// Negative pid = signal the whole process group (see process.kill(2)). Falls
+// back to signalling just the child if the group is already gone.
+function killGroup(pid, signal) {
+  try { process.kill(-pid, signal); }
+  catch { try { process.kill(pid, signal); } catch { /* already gone */ } }
+}
+
 try {
   writeFileSync(spec.logPath, '', { flag: 'wx', mode: 0o600 });
 
+  // detached: true makes the child its own process-group leader (child.pid
+  // doubles as the group id), so cancel can reach Bash grandchildren too.
   const child = spawn(process.env.CLAUDE_BIN || 'claude', spec.claudeArgs, {
     cwd: spec.cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
   });
+
+  // Installed before the 'running' record is written: a cancel racing the
+  // supervisor startup must still forward to the child and still land a
+  // 'cancelled' terminal record via the close handler below.
+  let cancelled = false;
+  process.on('SIGTERM', () => {
+    cancelled = true;
+    if (!child.pid) return;
+    killGroup(child.pid, 'SIGTERM');
+    setTimeout(() => killGroup(child.pid, 'SIGKILL'), 10_000).unref();
+  });
+
   child.stdin.end(readFileSync(spec.promptPath, 'utf8'));
 
   writeJsonAtomic(spec.recordPath, {
@@ -46,13 +68,6 @@ try {
   }
   child.stdout.on('data', sink);
   child.stderr.on('data', sink);
-
-  let cancelled = false;
-  process.on('SIGTERM', () => {
-    cancelled = true;
-    child.kill('SIGTERM');
-    setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
-  });
 
   child.on('close', (code) => {
     const { sessionId, result, isError } = extractFromStream(tail);

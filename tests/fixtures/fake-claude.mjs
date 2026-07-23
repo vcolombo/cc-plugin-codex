@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Stand-in for the `claude` binary. See run-claude.test.mjs for the contract.
+import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
@@ -22,6 +23,13 @@ process.stdin.on('end', async () => {
   if (process.env.FAKE_CLAUDE_PLAIN) {
     console.log(process.env.FAKE_CLAUDE_PLAIN);
     process.exit(Number(process.env.FAKE_CLAUDE_EXIT || 0));
+  }
+  if (process.env.FAKE_CLAUDE_SPAWN_GRANDCHILD) {
+    // Not detached: it stays in this process's group, like a real Bash-tool
+    // subprocess, so a process-group cancel should reach it too.
+    const gc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    gc.unref();
+    console.log(JSON.stringify({ type: 'grandchild', pid: gc.pid }));
   }
   console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-fake-123' }));
   const sleep = Number(process.env.FAKE_CLAUDE_SLEEP_MS || 0);
