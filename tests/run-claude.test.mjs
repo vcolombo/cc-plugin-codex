@@ -36,6 +36,17 @@ test('buildClaudeArgs rejects unknown mode', () => {
   assert.throws(() => buildClaudeArgs('nope'));
 });
 
+test('CLI rejects --base with a missing value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rc-'));
+  assert.throws(
+    () => execFileSync('node', [SCRIPT, 'review', '--base', '--background'], {
+      cwd: dir, input: '', encoding: 'utf8',
+      env: { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: join(dir, '.codex') },
+    }),
+    /--base requires a value/,
+  );
+});
+
 test('foreground rescue pipes task via stdin and surfaces result + session', () => {
   const dir = mkdtempSync(join(tmpdir(), 'rc-'));
   const capture = join(dir, 'cap.json');

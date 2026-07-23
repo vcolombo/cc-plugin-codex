@@ -39,11 +39,17 @@ export function buildClaudeArgs(mode, opts = {}) {
 function parseArgv(argv) {
   const [mode, ...rest] = argv;
   const opts = { mode };
-  for (let i = 0; i < rest.length; i++) {
+  let i = 0;
+  const takeValue = (flag) => {
+    const v = rest[++i];
+    if (v === undefined || v.startsWith('--')) throw new Error(`${flag} requires a value`);
+    return v;
+  };
+  for (; i < rest.length; i++) {
     const a = rest[i];
-    if (a === '--base') opts.base = rest[++i];
-    else if (a === '--model') opts.model = rest[++i];
-    else if (a === '--resume') opts.resume = rest[++i];
+    if (a === '--base') opts.base = takeValue(a);
+    else if (a === '--model') opts.model = takeValue(a);
+    else if (a === '--resume') opts.resume = takeValue(a);
     else if (a === '--adversarial') opts.adversarial = true;
     else if (a === '--yolo') opts.yolo = true;
     else if (a === '--background') opts.background = true;
