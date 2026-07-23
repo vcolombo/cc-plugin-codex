@@ -4,6 +4,10 @@ import { join } from 'node:path';
 
 export const PER_FILE_CAP = 100_000;
 export const TOTAL_CAP = 400_000;
+// A repo can hold thousands of untracked-but-not-ignored files (build output,
+// caches). Read the contents of at most this many; list the rest by name only
+// so `$claude:review` can't be stalled reading them all.
+export const MAX_UNTRACKED_READ = 50;
 
 function git(cwd, ...args) {
   try {
@@ -40,7 +44,9 @@ export function buildReviewEvidence({ cwd, base = null }) {
   sections.push(`## Staged changes\n\n\`\`\`diff\n${cap(git(cwd, 'diff', '--cached'), TOTAL_CAP / 4)}\`\`\`\n`);
   sections.push(`## Unstaged changes\n\n\`\`\`diff\n${cap(git(cwd, 'diff'), TOTAL_CAP / 4)}\`\`\`\n`);
   const untracked = git(cwd, 'ls-files', '--others', '--exclude-standard').split('\n').filter(Boolean);
-  for (const rel of untracked) {
+  const toRead = untracked.slice(0, MAX_UNTRACKED_READ);
+  const nameOnly = untracked.slice(MAX_UNTRACKED_READ);
+  for (const rel of toRead) {
     let body;
     try {
       const st = lstatSync(join(cwd, rel));
@@ -66,6 +72,9 @@ export function buildReviewEvidence({ cwd, base = null }) {
       body = '(unreadable)';
     }
     sections.push(`## Untracked: ${rel}\n\n${body}\n`);
+  }
+  if (nameOnly.length) {
+    sections.push(`## Additional untracked files (${nameOnly.length}, contents omitted)\n\n\`\`\`\n${nameOnly.join('\n')}\n\`\`\`\n`);
   }
   return cap(sections.join('\n'), TOTAL_CAP);
 }

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildReviewEvidence, PER_FILE_CAP } from '../plugins/claude/scripts/lib/evidence.mjs';
+import { buildReviewEvidence, PER_FILE_CAP, MAX_UNTRACKED_READ } from '../plugins/claude/scripts/lib/evidence.mjs';
 
 function initRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'ev-'));
@@ -76,4 +76,14 @@ test('binary check does not require reading the whole file', () => {
   writeFileSync(join(dir, 'big.bin'), big);
   const ev = buildReviewEvidence({ cwd: dir });
   assert.match(ev, /## Untracked: big\.bin[\s\S]*binary file, contents omitted/);
+});
+
+test('caps how many untracked files are read; lists the rest by name', () => {
+  const { dir } = initRepo();
+  const n = MAX_UNTRACKED_READ + 5;
+  for (let i = 0; i < n; i++) writeFileSync(join(dir, `u${i}.txt`), `content ${i}\n`);
+  const ev = buildReviewEvidence({ cwd: dir });
+  const readSections = (ev.match(/## Untracked: /g) || []).length;
+  assert.equal(readSections, MAX_UNTRACKED_READ);
+  assert.match(ev, new RegExp(`Additional untracked files \\(5, contents omitted\\)`));
 });
