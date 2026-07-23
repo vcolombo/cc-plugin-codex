@@ -25,6 +25,13 @@ const REDACT_PATTERNS = [
   /\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/g,
   /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
   /\bnpm_[A-Za-z0-9]{30,}\b/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+  /\bglpat-[0-9A-Za-z_-]{20,}\b/g,
+  /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\s*[=:]\s*\S+/gi,
+  // Bearer must run before the Authorization line pattern below, otherwise
+  // the latter consumes just the "Bearer" word and strands the token.
+  /\bBearer\s+[A-Za-z0-9._~+/-]{10,}=*/g,
+  /\bAuthorization\s*:\s*\S+/gi,
   /\b(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*\d)[A-Za-z0-9+/=_-]{40,}\b/g,
 ];
 
@@ -140,7 +147,7 @@ function cmdExtract() {
 async function cmdWriteHandoff() {
   let narrative = '';
   for await (const chunk of process.stdin) narrative += chunk;
-  narrative = narrative.trim();
+  narrative = redact(narrative.trim());
   if (!narrative) { process.stderr.write('write-handoff requires the narrative on stdin\n'); process.exit(2); }
   if (!narrative.startsWith('# Handoff from Codex')) {
     narrative = `# Handoff from Codex\n\n${narrative}`;

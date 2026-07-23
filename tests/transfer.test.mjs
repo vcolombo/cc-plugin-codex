@@ -106,6 +106,20 @@ test('redact scrubs vendor tokens and high-entropy runs but keeps git SHAs', () 
   assert.ok(s.includes('3f786850e387550fdab836ed7e6dc881de23001b'), 'git SHAs must survive');
 });
 
+test('redact scrubs Google API keys, GitLab PATs, key=value secrets, and auth headers', () => {
+  const s = redact([
+    'google AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY',
+    'gitlab glpat-abcdefghijklmnopqrst',
+    'config password=hunter2',
+    'header Authorization: Bearer abcDEF012345.ghiJKL',
+  ].join('\n'));
+  assert.ok(!s.includes('AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY'));
+  assert.ok(!s.includes('glpat-abcdefghijklmnopqrst'));
+  assert.ok(!s.includes('hunter2'));
+  assert.ok(!s.includes('abcDEF012345.ghiJKL'));
+  assert.match(s, /\[REDACTED\]/);
+});
+
 test('fallback scan matches cwd beyond the 20 newest sessions', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
   const home = join(dir, '.codex');
@@ -121,6 +135,20 @@ test('fallback scan matches cwd beyond the 20 newest sessions', () => {
   delete env.CODEX_THREAD_ID;
   const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
   assert.equal(JSON.parse(out).transcriptPath, target);
+});
+
+test('write-handoff redacts secrets in the narrative before writing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tr-'));
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  const secret = 'AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY';
+  const out = execFileSync('node', [SCRIPT, 'write-handoff'], {
+    cwd: dir, env, encoding: 'utf8', input: `Take over. Use key ${secret} to auth.`,
+  });
+  const path = out.match(/Handoff written: (\S+)/)[1];
+  const content = readFileSync(path, 'utf8');
+  assert.ok(content.startsWith('# Handoff from Codex'));
+  assert.ok(!content.includes(secret));
+  assert.match(content, /\[REDACTED\]/);
 });
 
 test('broken symlink named *.jsonl does not crash the walk', () => {
