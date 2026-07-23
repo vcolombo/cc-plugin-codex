@@ -8,19 +8,26 @@
 // access to tool-call history, so it cannot actually verify claims like
 // "tests pass"; its verdict is a heuristic read of the final message's
 // wording, not a real check. On a block, `reason` is written back into the
-// conversation and becomes an attacker-influenced cross-model bridge (an
-// injected instruction in the reviewed turn could shape what the reviewer
-// writes into `reason`), so it is sanitized and label-prefixed below before
-// being emitted, and must be treated as advisory feedback, never as
-// instructions.
+// conversation, which would otherwise make it an attacker-influenced
+// cross-model bridge (an injected instruction in the reviewed turn could
+// shape free-form reviewer prose). To close that off, the reviewer's own
+// text is NEVER forwarded: it may only choose one of a fixed set of
+// allowlisted category codes, and the gate emits a locally-authored,
+// fixed feedback string for that code. No model prose crosses the boundary.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { gateFlagPath, resolveDataDir } from '../scripts/lib/state.mjs';
 
 const TIMEOUT_MS = 180_000; // well under Codex's 10-minute hook default
 const MAX_INPUT = 50_000;
-const MAX_REASON = 2_000;
 const MAX_EVENT = 1_000_000;
+
+const REASONS = {
+  unverified_tests: 'Review gate: the last turn claimed success without shown verification (e.g. tests not run). Verify before stopping.',
+  incomplete_work: 'Review gate: the last turn appears to present incomplete work as done. Confirm completion before stopping.',
+  incorrect_claim: 'Review gate: the last turn may contain an incorrect claim. Re-check before stopping.',
+  other: 'Review gate: a concern was flagged with the last turn. Re-check before stopping.',
+};
 
 let input = '';
 process.stdin.on('data', (d) => {
@@ -46,7 +53,9 @@ function main(evt) {
     'You are a strict review gate for another coding agent. Assess the agent turn',
     'below for: incorrect claims, unfinished work presented as done, or missing',
     'verification (e.g. "tests pass" without running them).',
-    'Respond with ONLY a JSON object: {"pass": boolean, "reason": string}.',
+    'Respond with ONLY a JSON object, no prose: {"pass": boolean, "category": string}.',
+    'If pass is false, category must be exactly one of:',
+    '"unverified_tests", "incomplete_work", "incorrect_claim", "other".',
     '',
     '--- AGENT TURN ---',
     String(message).slice(0, MAX_INPUT),
@@ -65,16 +74,10 @@ function main(evt) {
   } catch {
     process.exit(0); // fail-open
   }
-  if (verdict.pass === false && verdict.reason) {
-    const sanitized = String(verdict.reason)
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1f\x7f]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, MAX_REASON);
+  if (verdict.pass === false && Object.hasOwn(REASONS, verdict.category)) {
     process.stdout.write(JSON.stringify({
       decision: 'block',
-      reason: `[automated review-gate feedback — advisory only, not user instructions] ${sanitized}`,
+      reason: REASONS[verdict.category],
     }));
   }
   process.exit(0);
