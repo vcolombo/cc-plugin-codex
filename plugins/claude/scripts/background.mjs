@@ -9,7 +9,7 @@ export function launchBackground({ mode, claudeArgs, prompt, scriptPath, scriptD
   const dir = jobsDir(dataDir, process.cwd());
   const id = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
   const promptPath = join(dir, `${id}.prompt`);
-  writeFileSync(promptPath, prompt, { mode: 0o600 });
+  writeFileSync(promptPath, prompt, { mode: 0o600, flag: 'wx' });
   const spec = {
     id,
     claudeArgs,
