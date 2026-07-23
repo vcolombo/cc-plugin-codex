@@ -102,3 +102,13 @@ test('foreground review does not surface session id', () => {
   assert.match(out, /FAKE RESULT/);
   assert.ok(!out.match(/Claude session:/), 'review mode should not print session id');
 });
+
+test('foreground decodes UTF-8 split across stdout chunks without corruption', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rc-'));
+  const out = execFileSync('node', [SCRIPT, 'rescue'], {
+    cwd: dir, input: 'do it', encoding: 'utf8',
+    env: { ...process.env, CLAUDE_BIN: FAKE, FAKE_CLAUDE_SPLIT_UTF8: '1', CODEX_HOME: join(dir, '.codex') },
+  });
+  assert.match(out, /café/);
+  assert.doesNotMatch(out, /�/); // no replacement chars
+});

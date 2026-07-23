@@ -83,6 +83,7 @@ function runForeground(claudeArgs, prompt, mode) {
   child.stdin.on('error', () => {});
   child.stdin.end(prompt);
   let out = '';
+  child.stdout.setEncoding('utf8'); // decode across chunk boundaries so a split multibyte char isn't corrupted
   child.stdout.on('data', (d) => { out = (out + d).slice(-TAIL_CAP); }); // result event arrives last; only the tail matters
   child.on('close', (code) => {
     const { sessionId, result, isError } = extractFromStream(out);
