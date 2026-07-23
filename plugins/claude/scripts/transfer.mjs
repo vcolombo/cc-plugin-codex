@@ -171,7 +171,13 @@ async function cmdWriteHandoff() {
 }
 
 function cmdLaunch(path) {
-  let content = readFileSync(path, 'utf8');
+  let content;
+  try {
+    content = readFileSync(path, 'utf8');
+  } catch (err) {
+    process.stderr.write(`Cannot read handoff file ${path}: ${err.message}\n`);
+    process.exit(1);
+  }
   // Content as a single argv element: no shell, no interpolation. Force the
   // "# Handoff from Codex" header so content can't start with a dash and be
   // parsed as a claude CLI flag (path is arbitrary, not necessarily our own

@@ -106,6 +106,17 @@ test('launch surfaces spawn errors (missing CLAUDE_BIN) with exit 127', () => {
   assert.match(res.stderr, /setup/);
 });
 
+test('launch reports a clean error on an unreadable handoff path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tr-'));
+  const res = spawnSync('node', [SCRIPT, 'launch', join(dir, 'does-not-exist.md')], {
+    cwd: dir, encoding: 'utf8', input: '',
+    env: { ...process.env, CODEX_HOME: join(dir, '.codex'), CLAUDE_BIN: '/nonexistent/claude' },
+  });
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /Cannot read handoff file/);
+  assert.doesNotMatch(res.stderr, /at cmdLaunch|at Object|node:internal/); // no stack trace
+});
+
 test('redact scrubs vendor tokens and high-entropy runs but keeps git SHAs', () => {
   const s = redact([
     'github ghp_ABCdefGHIjklMNOpqrSTUvwxYZ0123456789',
