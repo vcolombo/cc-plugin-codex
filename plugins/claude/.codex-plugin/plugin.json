@@ -1,0 +1,17 @@
+{
+  "name": "claude",
+  "version": "0.1.0",
+  "description": "Use Claude Code from within Codex: code reviews, task delegation, background jobs, and session transfer.",
+  "author": { "name": "colombov", "email": "vcolombo@gmail.com" },
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Claude Code for Codex",
+    "shortDescription": "Invoke Claude Code from inside Codex",
+    "longDescription": "Mirror of openai/codex-plugin-cc in the opposite direction: run read-only Claude Code reviews of your changes, delegate tasks to Claude Code in the foreground or as background jobs, manage those jobs, and hand a Codex session off to an interactive Claude Code session.",
+    "developerName": "colombov",
+    "defaultPrompt": "Use $claude:setup to check that Claude Code is installed and authenticated.",
+    "category": "Productivity",
+    "capabilities": ["skills", "hooks"]
+  }
+}
