@@ -54,7 +54,7 @@ Skill-launched scripts (`review`, `rescue`, `transfer`, etc.) run as ordinary Co
 - **Write access to `~/.claude`**, Claude Code's own config/credentials directory.
 - **Write access to `~/.codex/plugins/data/claude-cc-plugin-codex`**, where this plugin keeps its own state (job records, transfer handoffs, session records).
 
-If your Codex session is running with a read-only sandbox, a restrictive approval policy, or no network, expect to see approval prompts or outright failures from these skills — that's expected and by design, not a bug. The skills try to detect the common failure signatures (missing binary, no network, denied write) and explain what's needed rather than failing silently.
+If your Codex session is running with a read-only sandbox, a restrictive approval policy, or no network, expect to see approval prompts or outright failures from these skills — that's expected and by design, not a bug. The skills detect a missing `claude` binary and point you at `$claude:setup`; other sandbox failures (no network, denied write) surface as the underlying command's own error rather than a special-cased message.
 
 ## Review gate (off by default)
 
