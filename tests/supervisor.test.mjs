@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,4 +60,15 @@ test('SIGTERM cancels and still finalizes', async () => {
   const rec = readJson(spec.recordPath);
   assert.equal(rec.status, 'cancelled');
   assert.ok(rec.endedAt);
+});
+
+test('missing prompt file still finalizes the record as failed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir);
+  rmSync(spec.promptPath);
+  const res = spawnSync('node', [SUP, specPath], { env, encoding: 'utf8' });
+  const rec = readJson(spec.recordPath);
+  assert.equal(rec.status, 'failed');
+  assert.ok(rec.endedAt);
+  assert.match(rec.error, /ENOENT|no such file/i);
 });
