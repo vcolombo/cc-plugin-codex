@@ -30,6 +30,9 @@ export function buildReviewEvidence({ cwd, base = null }) {
     throw new Error(`Not a git repository: ${cwd}`);
   }
   if (base) {
+    // A ref can't start with '-' (git refname rules forbid it), and a '-'-leading
+    // value would be parsed by git as an option even through execFileSync's argv.
+    if (base.startsWith('-')) throw new Error(`Invalid --base ref: ${base}`);
     try {
       execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd, encoding: 'utf8' });
     } catch {

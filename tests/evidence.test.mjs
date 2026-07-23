@@ -61,6 +61,11 @@ test('--base ref that does not exist throws', () => {
   assert.throws(() => buildReviewEvidence({ cwd: dir, base: 'no-such-ref' }), /--base ref not found/);
 });
 
+test('--base value starting with a dash is rejected as invalid', () => {
+  const { dir } = initRepo();
+  assert.throws(() => buildReviewEvidence({ cwd: dir, base: '-n' }), /Invalid --base ref/);
+});
+
 test('untracked symlinks are not dereferenced', () => {
   const { dir } = initRepo();
   writeFileSync(join(dir, 'secret-target.txt'), 'SECRET-CONTENT\n');
