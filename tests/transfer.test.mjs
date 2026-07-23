@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, utimesSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,4 +75,36 @@ test('write-handoff prepends header and prints launch command; launch passes con
   const cap = JSON.parse(readFileSync(capture, 'utf8'));
   assert.equal(cap.argv.length, 1);
   assert.ok(cap.argv[0].startsWith('# Handoff from Codex'));
+});
+
+test('redact scrubs vendor tokens and high-entropy runs but keeps git SHAs', () => {
+  const s = redact([
+    'github ghp_ABCdefGHIjklMNOpqrSTUvwxYZ0123456789',
+    'slack xoxb-1234567890-abcdefghij',
+    'npm npm_ABCdef0123456789ABCdef0123456789XYZ',
+    'entropy Xy9Zw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8Ba7Xy9Zw8V',
+    'sha 3f786850e387550fdab836ed7e6dc881de23001b',
+  ].join('\n'));
+  assert.ok(!s.includes('ghp_'));
+  assert.ok(!s.includes('xoxb-'));
+  assert.ok(!s.includes('npm_ABC'));
+  assert.ok(!s.includes('Xy9Zw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8Ba7'));
+  assert.ok(s.includes('3f786850e387550fdab836ed7e6dc881de23001b'), 'git SHAs must survive');
+});
+
+test('fallback scan matches cwd beyond the 20 newest sessions', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const home = join(dir, '.codex');
+  const sess = join(home, 'sessions');
+  mkdirSync(sess, { recursive: true });
+  for (let i = 0; i < 25; i++) writeFileSync(join(sess, `other-${i}.jsonl`), JSON.stringify({ role: 'user', content: `unrelated ${i}` }) + '\n');
+  // target written FIRST so it is the oldest by mtime
+  const target = join(sess, 'target.jsonl');
+  writeFileSync(target, JSON.stringify({ role: 'user', content: `work in ${dir}` }) + '\n');
+  const past = new Date(Date.now() - 60_000);
+  utimesSync(target, past, past);
+  const env = { ...process.env, CODEX_HOME: home };
+  delete env.CODEX_THREAD_ID;
+  const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
+  assert.equal(JSON.parse(out).transcriptPath, target);
 });

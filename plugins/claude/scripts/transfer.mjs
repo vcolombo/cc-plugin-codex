@@ -18,6 +18,10 @@ const REDACT_PATTERNS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
   /\b(?:sk|pk|api|token|key|secret|bearer)[-_][A-Za-z0-9_-]{20,}\b/gi,
+  /\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
+  /\bnpm_[A-Za-z0-9]{30,}\b/g,
+  /\b(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*\d)[A-Za-z0-9+/=_-]{40,}\b/g,
 ];
 
 export function redact(text) {
@@ -88,12 +92,11 @@ function resolveTranscript(env = process.env) {
   const cwd = process.cwd();
   const matches = walkJsonl(join(codexHome(env), 'sessions'))
     .sort((a, b) => b.mtime - a.mtime)
-    .slice(0, 20)
     .filter((c) => {
       try { return readFileSync(c.path, 'utf8').includes(cwd); } catch { return false; }
     });
   if (matches.length === 1) return { transcriptPath: matches[0].path, sessionId };
-  return { candidates: matches.map((m) => m.path), sessionId };
+  return { candidates: matches.slice(0, 20).map((m) => m.path), sessionId };
 }
 
 function cmdExtract() {
