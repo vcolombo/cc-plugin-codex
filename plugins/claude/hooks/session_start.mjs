@@ -5,15 +5,17 @@ import { resolveDataDir, sessionsDir, writeJsonAtomic } from '../scripts/lib/sta
 let input = '';
 process.stdin.on('data', (d) => { input += d; });
 process.stdin.on('end', () => {
-  let evt = {};
-  try { evt = JSON.parse(input); } catch { /* fail-open */ }
-  if (!evt.session_id) process.exit(0);
-  const dataDir = resolveDataDir({ env: process.env });
-  writeJsonAtomic(join(sessionsDir(dataDir), `${evt.session_id}.json`), {
-    sessionId: evt.session_id,
-    transcriptPath: evt.transcript_path ?? null,
-    cwd: evt.cwd ?? process.cwd(),
-    recordedAt: new Date().toISOString(),
-  });
+  try {
+    let evt = {};
+    try { evt = JSON.parse(input); } catch { /* fail-open */ }
+    if (!evt.session_id) process.exit(0);
+    const dataDir = resolveDataDir({ env: process.env });
+    writeJsonAtomic(join(sessionsDir(dataDir), `${evt.session_id}.json`), {
+      sessionId: evt.session_id,
+      transcriptPath: evt.transcript_path ?? null,
+      cwd: evt.cwd ?? process.cwd(),
+      recordedAt: new Date().toISOString(),
+    });
+  } catch { /* fail-open: recording is best-effort */ }
   process.exit(0);
 });

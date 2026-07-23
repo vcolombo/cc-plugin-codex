@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,4 +74,16 @@ test('gate fails open on reviewer crash and passing verdict', () => {
     PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE, FAKE_CLAUDE_PLAIN: '{"pass": true, "reason": "fine"}',
   });
   assert.equal(pass.trim(), '');
+});
+
+test('session_start exits 0 even when the data dir is unwritable', () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
+  const blocker = join(dataDir, 'sessions');
+  writeFileSync(blocker, 'not a directory'); // sessionsDir() mkdir will fail
+  const res = spawnSync('node', [START], {
+    input: JSON.stringify({ session_id: 's-err' }),
+    encoding: 'utf8',
+    env: { ...process.env, PLUGIN_DATA: dataDir },
+  });
+  assert.equal(res.status, 0);
 });
