@@ -86,3 +86,19 @@ test('foreground review includes precomputed evidence in the prompt', () => {
   assert.match(cap.stdin, /read-only code review/);
   assert.match(cap.stdin, /Untracked: n\.txt/);
 });
+
+test('foreground review does not surface session id', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rc-'));
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: dir });
+  const capture = join(dir, 'cap.json');
+  const out = execFileSync('node', [SCRIPT, 'review'], {
+    cwd: dir,
+    input: '',
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_BIN: FAKE, FAKE_CLAUDE_CAPTURE: capture, CODEX_HOME: join(dir, '.codex') },
+  });
+  assert.match(out, /FAKE RESULT/);
+  assert.ok(!out.match(/Claude session:/), 'review mode should not print session id');
+});

@@ -75,18 +75,19 @@ export function buildPrompt(opts, stdinText) {
   return stdinText;
 }
 
-function runForeground(claudeArgs, prompt) {
+function runForeground(claudeArgs, prompt, mode) {
   const child = spawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
     cwd: process.cwd(),
     stdio: ['pipe', 'pipe', 'inherit'],
   });
+  child.stdin.on('error', () => {});
   child.stdin.end(prompt);
   let out = '';
   child.stdout.on('data', (d) => { out = (out + d).slice(-TAIL_CAP); }); // result event arrives last; only the tail matters
   child.on('close', (code) => {
     const { sessionId, result, isError } = extractFromStream(out);
     if (result) process.stdout.write(`${result}\n`);
-    if (sessionId) process.stdout.write(`\nClaude session: ${sessionId}\n`);
+    if (sessionId && mode === 'rescue') process.stdout.write(`\nClaude session: ${sessionId}\n`);
     process.exit(isError && code === 0 ? 1 : code ?? 1);
   });
   child.on('error', (err) => {
@@ -105,7 +106,7 @@ async function main() {
     launchBackground({ mode: opts.mode, claudeArgs, prompt, scriptPath: SCRIPT_PATH, scriptDir: dirname(SCRIPT_PATH) });
     return;
   }
-  runForeground(claudeArgs, prompt);
+  runForeground(claudeArgs, prompt, opts.mode);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
