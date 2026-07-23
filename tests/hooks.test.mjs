@@ -91,6 +91,22 @@ test('gate fails open on reviewer crash and passing verdict', () => {
   assert.equal(pass.trim(), '');
 });
 
+test('gate caps an oversized event and fails open without crashing', () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
+  writeFileSync(gateFlagPath(dataDir), 'on\n');
+  // A ~3MB event that would be valid JSON if untruncated; the cap slices it,
+  // parse then fails, and the hook fails open (exit 0, no block).
+  const payload = `{"stop_hook_active": false, "last_assistant_message": "${'x'.repeat(3_000_000)}"}`;
+  const res = spawnSync('node', [GATE], {
+    input: payload,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    env: { ...process.env, PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE },
+  });
+  assert.equal(res.status, 0);
+  assert.equal(res.stdout.trim(), '');
+});
+
 test('session_start exits 0 even when the data dir is unwritable', () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
   const blocker = join(dataDir, 'sessions');

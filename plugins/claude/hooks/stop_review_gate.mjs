@@ -23,7 +23,10 @@ const MAX_REASON = 2_000;
 const MAX_EVENT = 1_000_000;
 
 let input = '';
-process.stdin.on('data', (d) => { if (input.length < MAX_EVENT) input += d; });
+process.stdin.on('data', (d) => {
+  const room = MAX_EVENT - input.length;
+  if (room > 0) input += d.length > room ? d.slice(0, room) : d;
+});
 process.stdin.on('end', () => {
   try {
     main(JSON.parse(input));
