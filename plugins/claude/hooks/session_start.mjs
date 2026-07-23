@@ -4,6 +4,7 @@ import { resolveDataDir, sessionsDir, writeJsonAtomic } from '../scripts/lib/sta
 
 const MAX_EVENT = 1_000_000;
 let input = '';
+process.stdin.setEncoding('utf8'); // decode as text so the cap and slice are in the same units (chars) and never split a multibyte char
 process.stdin.on('data', (d) => {
   const room = MAX_EVENT - input.length;
   if (room > 0) input += d.length > room ? d.slice(0, room) : d;
