@@ -11,6 +11,7 @@ export function extractFromStream(text) {
     } catch {
       continue;
     }
+    if (!ev || typeof ev !== 'object') continue;
     if (ev.session_id) sessionId = ev.session_id;
     if (ev.type === 'result') {
       result = ev.result ?? null;

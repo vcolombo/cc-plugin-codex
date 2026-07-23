@@ -35,3 +35,8 @@ test('isAlive rejects dead pid and psStart mismatch', () => {
   assert.equal(isAlive({ pid: process.pid, psStart: psStart(process.pid) }), true);
   assert.equal(isAlive(null), false);
 });
+
+test('extractFromStream tolerates non-object JSON lines', () => {
+  const text = ['null', 'true', '42', '[1,2]', JSON.stringify({ type: 'result', result: 'ok', session_id: 's-3' })].join('\n');
+  assert.deepEqual(extractFromStream(text), { sessionId: 's-3', result: 'ok', isError: false });
+});
