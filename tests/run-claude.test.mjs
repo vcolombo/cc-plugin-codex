@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -111,4 +111,12 @@ test('foreground decodes UTF-8 split across stdout chunks without corruption', (
   });
   assert.match(out, /café/);
   assert.doesNotMatch(out, /�/); // no replacement chars
+});
+
+test('unknown mode errors immediately with a clear message (exit 2), no stdin hang', () => {
+  const res = spawnSync('node', [SCRIPT, 'bogus'], {
+    input: '', encoding: 'utf8', env: { ...process.env },
+  });
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /unknown mode: bogus/);
 });

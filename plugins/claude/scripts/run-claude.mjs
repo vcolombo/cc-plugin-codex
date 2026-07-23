@@ -38,6 +38,9 @@ export function buildClaudeArgs(mode, opts = {}) {
 
 function parseArgv(argv) {
   const [mode, ...rest] = argv;
+  if (mode !== 'review' && mode !== 'rescue') {
+    throw new Error(`unknown mode: ${mode ?? '(none)'} (expected 'review' or 'rescue')`);
+  }
   const opts = { mode };
   let i = 0;
   const takeValue = (flag) => {

@@ -333,3 +333,20 @@ test('extract reports a clean error when the path is unreadable (a directory)', 
   assert.match(res.stderr, /Cannot read transcript/);
   assert.doesNotMatch(res.stderr, /at cmdExtract|node:internal/);
 });
+
+test('a SessionStart record pointing at a directory falls through to the scan', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const home = join(dir, '.codex');
+  const sess = join(home, 'sessions');
+  mkdirSync(sess, { recursive: true });
+  const env = { ...process.env, CODEX_HOME: home, CODEX_THREAD_ID: 'th-bad' };
+  const dataDir = resolveDataDir({ env });
+  const asDir = join(dir, 'transcript-as-dir');
+  mkdirSync(asDir);
+  writeJsonAtomic(join(sessionsDir(dataDir), 'th-bad.json'),
+    { sessionId: 'th-bad', transcriptPath: asDir, cwd: dir });
+  // No valid scan match either, so extract exits 2 rather than reading the directory.
+  const res = spawnSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
+  assert.equal(res.status, 2);
+  assert.doesNotMatch(res.stderr, /EISDIR|node:internal/);
+});

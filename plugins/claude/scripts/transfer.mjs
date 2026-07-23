@@ -180,8 +180,14 @@ function resolveTranscript(env = process.env) {
   const sessionId = env.CODEX_THREAD_ID ?? null;
   if (sessionId) {
     const rec = readJson(join(sessionsDir(dataDir), `${sessionId}.json`));
-    if (rec?.transcriptPath && existsSync(rec.transcriptPath)) {
-      return { transcriptPath: rec.transcriptPath, sessionId };
+    // Only trust the recorded path if it's a regular file — a corrupted record
+    // pointing at a symlink or directory falls through to the scan instead.
+    if (rec?.transcriptPath) {
+      try {
+        if (lstatSync(rec.transcriptPath).isFile()) {
+          return { transcriptPath: rec.transcriptPath, sessionId };
+        }
+      } catch { /* missing/unstattable → fall through */ }
     }
   }
   const cwd = process.cwd();
