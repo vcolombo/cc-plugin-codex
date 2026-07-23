@@ -60,7 +60,22 @@ test('gate blocks on failing verdict', () => {
   });
   const verdict = JSON.parse(out);
   assert.equal(verdict.decision, 'block');
+  assert.match(verdict.reason, /^\[automated review-gate feedback/);
   assert.match(verdict.reason, /tests were never run/);
+});
+
+test('gate collapses newlines/control chars in the emitted reason', () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
+  writeFileSync(gateFlagPath(dataDir), 'on\n');
+  const out = run(GATE, { stop_hook_active: false, last_assistant_message: 'I did the thing' }, {
+    PLUGIN_DATA: dataDir,
+    CLAUDE_BIN: FAKE,
+    FAKE_CLAUDE_PLAIN: '{"pass": false, "reason": "line one\\nline\\ttwo\\u0007bell"}',
+  });
+  const verdict = JSON.parse(out);
+  assert.equal(verdict.decision, 'block');
+  assert.doesNotMatch(verdict.reason, /[\x00-\x1f\x7f]/);
+  assert.match(verdict.reason, /line one line two bell/);
 });
 
 test('gate fails open on reviewer crash and passing verdict', () => {
