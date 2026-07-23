@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, statSync } from 'node:fs';
+import { mkdtempSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -29,6 +29,13 @@ test('workspaceKey is stable 16-hex and cwd-sensitive', () => {
   assert.match(k, /^[0-9a-f]{16}$/);
   assert.equal(k, workspaceKey('/repo/a'));
   assert.notEqual(k, workspaceKey('/repo/b'));
+});
+
+test('workspaceKey resolves symlinks to the same key as the real path', () => {
+  const real = mkdtempSync(join(tmpdir(), 'state-real-'));
+  const link = join(mkdtempSync(join(tmpdir(), 'state-link-')), 'alias');
+  symlinkSync(real, link);
+  assert.equal(workspaceKey(link), workspaceKey(real));
 });
 
 test('writeJsonAtomic creates 0700 dirs, 0600 file, round-trips', () => {
