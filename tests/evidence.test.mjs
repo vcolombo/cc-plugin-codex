@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildReviewEvidence, PER_FILE_CAP } from '../plugins/claude/scripts/lib/evidence.mjs';
@@ -47,4 +47,23 @@ test('caps oversized untracked files with truncation marker', () => {
   writeFileSync(join(dir, 'big.txt'), 'x'.repeat(PER_FILE_CAP + 1000));
   const ev = buildReviewEvidence({ cwd: dir });
   assert.match(ev, /truncated at /);
+});
+
+test('untracked symlinks are not dereferenced', () => {
+  const { dir } = initRepo();
+  writeFileSync(join(dir, 'secret-target.txt'), 'SECRET-CONTENT\n');
+  execFileSync('git', ['add', 'secret-target.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '-qm', 'target'], { cwd: dir });
+  symlinkSync(join(dir, 'secret-target.txt'), join(dir, 'link.txt'));
+  const ev = buildReviewEvidence({ cwd: dir });
+  assert.match(ev, /## Untracked: link\.txt[\s\S]*not a regular file/);
+});
+
+test('binary check does not require reading the whole file', () => {
+  const { dir } = initRepo();
+  const big = Buffer.alloc(9000, 0x61); // 'a'
+  big[0] = 0; // NUL in first 8KB → binary
+  writeFileSync(join(dir, 'big.bin'), big);
+  const ev = buildReviewEvidence({ cwd: dir });
+  assert.match(ev, /## Untracked: big\.bin[\s\S]*binary file, contents omitted/);
 });

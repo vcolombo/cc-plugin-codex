@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { lstatSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const PER_FILE_CAP = 100_000;
@@ -19,10 +19,6 @@ function cap(text, limit) {
     : text;
 }
 
-function isProbablyText(buf) {
-  return !buf.subarray(0, 8192).includes(0);
-}
-
 export function buildReviewEvidence({ cwd, base = null }) {
   const sections = [`# Review evidence\n\nRepository: ${cwd}\n`];
   sections.push(`## git status\n\n\`\`\`\n${git(cwd, 'status', '--porcelain')}\`\`\`\n`);
@@ -35,10 +31,25 @@ export function buildReviewEvidence({ cwd, base = null }) {
   for (const rel of untracked) {
     let body;
     try {
-      const buf = readFileSync(join(cwd, rel));
-      body = isProbablyText(buf)
-        ? `\`\`\`\n${cap(buf.toString('utf8'), PER_FILE_CAP)}\`\`\``
-        : '(binary file, contents omitted)';
+      const st = lstatSync(join(cwd, rel));
+      if (!st.isFile()) {
+        body = '(not a regular file, contents omitted)';
+      } else {
+        const fd = openSync(join(cwd, rel), 'r');
+        try {
+          const head = Buffer.alloc(8192);
+          const headLen = readSync(fd, head, 0, 8192, 0);
+          if (head.subarray(0, headLen).includes(0)) {
+            body = '(binary file, contents omitted)';
+          } else {
+            const buf = Buffer.alloc(PER_FILE_CAP + 1);
+            const len = readSync(fd, buf, 0, PER_FILE_CAP + 1, 0);
+            body = `\`\`\`\n${cap(buf.subarray(0, len).toString('utf8'), PER_FILE_CAP)}\`\`\``;
+          }
+        } finally {
+          closeSync(fd);
+        }
+      }
     } catch {
       body = '(unreadable)';
     }
