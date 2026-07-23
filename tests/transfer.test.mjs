@@ -146,6 +146,20 @@ test('redact scrubs Google API keys, GitLab PATs, key=value secrets, and auth he
   assert.match(s, /\[REDACTED\]/);
 });
 
+test('redact consumes the whole secret value, not just one token', () => {
+  const s = redact([
+    'Authorization: Basic dXNlcjpwYXNz',
+    'Authorization: Digest username="u", response="abcd1234"',
+    'password="correct horse battery staple"',
+    'auth bearer AbC123.def-456_GHI',
+  ].join('\n'));
+  assert.ok(!s.includes('dXNlcjpwYXNz'));
+  assert.ok(!s.includes('username="u"'));
+  assert.ok(!s.includes('abcd1234'));
+  assert.ok(!s.includes('correct horse battery staple'));
+  assert.ok(!s.includes('AbC123.def-456_GHI'));
+});
+
 test('fallback scan matches cwd beyond the 20 newest sessions', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
   const home = join(dir, '.codex');
@@ -186,6 +200,18 @@ test('extractEvidence finds apply_patch file paths inside a serialized string to
   });
   const ev = extractEvidence(line);
   assert.ok(ev.filesTouched.includes('src/secret.js'));
+});
+
+test('extractEvidence captures both source and destination of an apply_patch rename', () => {
+  const line = JSON.stringify({
+    payload: {
+      type: 'custom_tool_call',
+      arguments: '*** Begin Patch\n*** Update File: old/name.js\n*** Move to: new/name.js\n*** End Patch',
+    },
+  });
+  const ev = extractEvidence(line);
+  assert.ok(ev.filesTouched.includes('old/name.js'));
+  assert.ok(ev.filesTouched.includes('new/name.js'));
 });
 
 test('broken symlink named *.jsonl does not crash the walk', () => {

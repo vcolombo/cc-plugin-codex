@@ -27,11 +27,12 @@ const REDACT_PATTERNS = [
   /\bnpm_[A-Za-z0-9]{30,}\b/g,
   /\bAIza[0-9A-Za-z_-]{35}\b/g,
   /\bglpat-[0-9A-Za-z_-]{20,}\b/g,
-  /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\s*[=:]\s*\S+/gi,
-  // Bearer must run before the Authorization line pattern below, otherwise
-  // the latter consumes just the "Bearer" word and strands the token.
-  /\bBearer\s+[A-Za-z0-9._~+/-]{10,}=*/g,
-  /\bAuthorization\s*:\s*\S+/gi,
+  /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\s*[=:]\s*(?:"[^"]*"|'[^']*'|\S+)/gi,
+  // Authorization line must run before the bare-Bearer pattern below, so a
+  // "Bearer ..." token inside a header line is consumed by the whole-line
+  // rule instead of leaking whatever the narrower Bearer rule leaves behind.
+  /\bAuthorization\s*:\s*.+/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi,
   /\b(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*\d)[A-Za-z0-9+/=_-]{40,}\b/g,
 ];
 
@@ -49,12 +50,16 @@ function flattenText(node) {
 
 const PATH_KEYS = new Set(['path', 'file_path', 'filePath']);
 const PATCH_PATH_RE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+const PATCH_MOVE_RE = /^\*\*\* Move to: (.+)$/gm;
 // Real Codex rollouts serialize apply_patch/custom_tool_call tool input as a
 // string (e.g. the "arguments" field), with paths embedded as patch markers
-// rather than as structured path fields.
+// rather than as structured path fields. Renames emit "*** Update File: old"
+// followed by "*** Move to: new" — the affected path is the destination, so
+// both source and destination are captured.
 function extractPatchPaths(str) {
   const paths = [];
   for (const m of str.matchAll(PATCH_PATH_RE)) paths.push(m[1].trim());
+  for (const m of str.matchAll(PATCH_MOVE_RE)) paths.push(m[1].trim());
   return paths;
 }
 
