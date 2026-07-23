@@ -2,8 +2,12 @@
 import { join } from 'node:path';
 import { resolveDataDir, sessionsDir, writeJsonAtomic } from '../scripts/lib/state.mjs';
 
+const MAX_EVENT = 1_000_000;
 let input = '';
-process.stdin.on('data', (d) => { input += d; });
+process.stdin.on('data', (d) => {
+  const room = MAX_EVENT - input.length;
+  if (room > 0) input += d.length > room ? d.slice(0, room) : d;
+});
 process.stdin.on('end', () => {
   try {
     let evt = {};

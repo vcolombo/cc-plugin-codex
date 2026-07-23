@@ -180,6 +180,10 @@ function cmdLaunch(path) {
     content = `# Handoff from Codex\n\n${content}`;
   }
   const res = spawnSync(process.env.CLAUDE_BIN || 'claude', [content], { stdio: 'inherit' });
+  if (res.error) {
+    process.stderr.write(`Failed to launch Claude Code (${res.error.message}). Run $claude:setup.\n`);
+    process.exit(127);
+  }
   process.exit(res.status ?? 1);
 }
 

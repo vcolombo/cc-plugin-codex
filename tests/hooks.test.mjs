@@ -107,6 +107,18 @@ test('gate caps an oversized event and fails open without crashing', () => {
   assert.equal(res.stdout.trim(), '');
 });
 
+test('session_start caps an oversized event and exits 0 without crashing', () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
+  const payload = `{"session_id": "big", "last_assistant_message": "${'x'.repeat(3_000_000)}"}`;
+  const res = spawnSync('node', [START], {
+    input: payload,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    env: { ...process.env, PLUGIN_DATA: dataDir },
+  });
+  assert.equal(res.status, 0);
+});
+
 test('session_start exits 0 even when the data dir is unwritable', () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
   const blocker = join(dataDir, 'sessions');

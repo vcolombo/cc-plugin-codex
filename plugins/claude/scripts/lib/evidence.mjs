@@ -20,6 +20,11 @@ function cap(text, limit) {
 }
 
 export function buildReviewEvidence({ cwd, base = null }) {
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    throw new Error(`Not a git repository: ${cwd}`);
+  }
   if (base) {
     try {
       execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd, encoding: 'utf8' });

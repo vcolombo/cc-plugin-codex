@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, utimesSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -89,6 +89,21 @@ test('launch guards arbitrary file content that starts with a dash', () => {
   const cap = JSON.parse(readFileSync(capture, 'utf8'));
   assert.equal(cap.argv.length, 1);
   assert.ok(cap.argv[0].startsWith('# Handoff from Codex'));
+});
+
+test('launch surfaces spawn errors (missing CLAUDE_BIN) with exit 127', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tr-'));
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  const out = execFileSync('node', [SCRIPT, 'write-handoff'], {
+    cwd: dir, env, encoding: 'utf8', input: 'Take over from Codex. Goal: finish widget.',
+  });
+  const path = out.match(/Handoff written: (\S+)/)[1];
+  const res = spawnSync('node', [SCRIPT, 'launch', path], {
+    cwd: dir, encoding: 'utf8', input: '',
+    env: { ...env, CLAUDE_BIN: '/nonexistent/claude' },
+  });
+  assert.equal(res.status, 127);
+  assert.match(res.stderr, /setup/);
 });
 
 test('redact scrubs vendor tokens and high-entropy runs but keeps git SHAs', () => {
