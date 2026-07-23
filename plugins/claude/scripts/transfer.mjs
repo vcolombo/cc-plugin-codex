@@ -226,7 +226,13 @@ async function cmdExtract(explicitPath) {
     transcriptPath = res.transcriptPath;
     sessionId = res.sessionId;
   }
-  const evidence = await streamEvidence(transcriptPath);
+  let evidence;
+  try {
+    evidence = await streamEvidence(transcriptPath);
+  } catch (err) {
+    process.stderr.write(`Cannot read transcript ${transcriptPath}: ${err.message}\n`);
+    process.exit(2);
+  }
   process.stdout.write(JSON.stringify({ sessionId, transcriptPath, ...evidence }, null, 2) + '\n');
 }
 
@@ -263,6 +269,10 @@ function cmdLaunch(path) {
   }
   const res = spawnSync(process.env.CLAUDE_BIN || 'claude', [content], { stdio: 'inherit' });
   if (res.error) {
+    if (res.error.code === 'E2BIG') {
+      process.stderr.write(`Handoff too large to pass on the command line (${content.length} chars). Shorten the handoff narrative and retry.\n`);
+      process.exit(1);
+    }
     process.stderr.write(`Failed to launch Claude Code (${res.error.message}). Run $claude:setup.\n`);
     process.exit(127);
   }

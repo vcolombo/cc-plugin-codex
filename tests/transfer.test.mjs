@@ -321,3 +321,15 @@ test('finalize hard-bounds total size even with huge paths and long goals', () =
   const ev = extractEvidence(lines.join('\n'));
   assert.ok(JSON.stringify(ev).length <= 150_000, `evidence size ${JSON.stringify(ev).length} exceeds cap`);
 });
+
+test('extract reports a clean error when the path is unreadable (a directory)', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const asDir = join(dir, 'notafile.jsonl');
+  mkdirSync(asDir);
+  const res = spawnSync('node', [SCRIPT, 'extract', asDir], {
+    cwd: dir, encoding: 'utf8', env: { ...process.env, CODEX_HOME: join(dir, '.codex') },
+  });
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /Cannot read transcript/);
+  assert.doesNotMatch(res.stderr, /at cmdExtract|node:internal/);
+});

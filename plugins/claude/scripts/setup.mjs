@@ -13,9 +13,18 @@ function bin() {
   return process.env.CLAUDE_BIN || 'claude';
 }
 
+function ensureDataDirOrExit(dataDir) {
+  try {
+    ensureDir(dataDir);
+  } catch (err) {
+    process.stderr.write(`Cannot create plugin data dir ${dataDir}: ${err.message}\nThe Codex sandbox/approval policy must allow writes there.\n`);
+    process.exit(1);
+  }
+}
+
 function cmdStatus() {
   const dataDir = resolveDataDir({ scriptPath: SCRIPT_PATH });
-  ensureDir(dataDir);
+  ensureDataDirOrExit(dataDir);
   const notes = [];
   const version = spawnSync(bin(), ['--version'], { encoding: 'utf8', input: '' });
   const found = !version.error && version.status === 0;
@@ -45,7 +54,7 @@ function cmdStatus() {
 
 function cmdGate(state) {
   const dataDir = resolveDataDir({ scriptPath: SCRIPT_PATH });
-  ensureDir(dataDir);
+  ensureDataDirOrExit(dataDir);
   const flag = gateFlagPath(dataDir);
   if (state === 'on') {
     writeFileSync(flag, 'on\n', { mode: 0o600 });

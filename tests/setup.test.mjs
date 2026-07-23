@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,4 +38,18 @@ test('gate on/off toggles the flag file', () => {
   assert.equal(existsSync(gateFlagPath(resolveDataDir({ env }))), true);
   execFileSync('node', [SCRIPT, 'gate', 'off'], { cwd: dir, env });
   assert.equal(existsSync(gateFlagPath(resolveDataDir({ env }))), false);
+});
+
+test('status reports a clean error when the data dir cannot be created', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  // Put a regular file where CODEX_HOME/plugins would need to be a directory.
+  const codexHome = join(dir, '.codex');
+  mkdirSync(join(codexHome, 'plugins', 'data'), { recursive: true });
+  writeFileSync(join(codexHome, 'plugins', 'data', 'claude-cc-plugin-codex'), 'not a dir');
+  const res = spawnSync('node', [SCRIPT, 'status'], {
+    cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: codexHome },
+  });
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /Cannot create plugin data dir/);
+  assert.doesNotMatch(res.stderr, /at cmdStatus|node:internal/);
 });
