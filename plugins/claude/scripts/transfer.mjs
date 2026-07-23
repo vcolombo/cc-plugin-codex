@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
   closeSync, existsSync, lstatSync, openSync, readFileSync, readdirSync, readSync, writeFileSync,
 } from 'node:fs';
@@ -145,8 +146,8 @@ async function cmdWriteHandoff() {
     narrative = `# Handoff from Codex\n\n${narrative}`;
   }
   const dir = handoffsDir(resolveDataDir({ scriptPath: SCRIPT_PATH }));
-  const path = join(dir, `handoff-${Date.now()}.md`);
-  writeFileSync(path, `${narrative}\n`, { mode: 0o600 });
+  const path = join(dir, `handoff-${Date.now()}-${randomBytes(4).toString('hex')}.md`);
+  writeFileSync(path, `${narrative}\n`, { flag: 'wx', mode: 0o600 });
   process.stdout.write(`Handoff written: ${path}\n`);
   process.stdout.write(`To start Claude Code with it, run:\n  node "${SCRIPT_PATH}" launch "${path}"\n`);
 }

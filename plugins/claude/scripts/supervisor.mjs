@@ -3,7 +3,7 @@
 // whatever happens to the child (success, failure, cancel), the record gets
 // a terminal status. SIGTERM here means "cancel the job".
 import { spawn } from 'node:child_process';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { psStart } from './lib/proc.mjs';
 import { readJson, writeJsonAtomic } from './lib/state.mjs';
 import { extractFromStream } from './lib/stream.mjs';
@@ -19,6 +19,8 @@ if (!spec) {
 }
 
 try {
+  writeFileSync(spec.logPath, '', { flag: 'wx', mode: 0o600 });
+
   const child = spawn(process.env.CLAUDE_BIN || 'claude', spec.claudeArgs, {
     cwd: spec.cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
