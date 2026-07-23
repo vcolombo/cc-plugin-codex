@@ -162,6 +162,7 @@ function cmdExtract() {
 
 async function cmdWriteHandoff() {
   let narrative = '';
+  process.stdin.setEncoding('utf8'); // preserve multibyte chars split across chunks
   for await (const chunk of process.stdin) narrative += chunk;
   narrative = redact(narrative.trim());
   if (!narrative) { process.stderr.write('write-handoff requires the narrative on stdin\n'); process.exit(2); }

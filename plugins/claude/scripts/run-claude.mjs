@@ -60,6 +60,7 @@ function parseArgv(argv) {
 
 async function readStdin() {
   let data = '';
+  process.stdin.setEncoding('utf8'); // preserve multibyte chars split across chunks
   for await (const chunk of process.stdin) data += chunk;
   return data;
 }
