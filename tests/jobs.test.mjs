@@ -22,6 +22,29 @@ test('listJobs flags dead running jobs as died', () => {
   assert.equal(rec.status, 'died');
 });
 
+test('result detects a died supervisor and shows the log tail', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  const jdir = jobsDir(resolveDataDir({ env }), dir);
+  writeJsonAtomic(join(jdir, 'd1.json'), {
+    id: 'd1', status: 'running', pid: 99999999, psStart: 'x', startedAt: new Date().toISOString(),
+  });
+  writeFileSync(join(jdir, 'd1.log'), 'last words from claude');
+  const out = execFileSync('node', [JOBS, 'result', 'd1'], { cwd: dir, env, encoding: 'utf8' });
+  assert.match(out, /died/);
+  assert.match(out, /last words from claude/);
+});
+
+test('listJobs flags stale starting jobs as died, keeps fresh ones starting', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
+  const stale = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+  writeJsonAtomic(join(dir, 'stale.json'), { id: 'stale', status: 'starting', startedAt: stale });
+  writeJsonAtomic(join(dir, 'fresh.json'), { id: 'fresh', status: 'starting', startedAt: new Date().toISOString() });
+  const [freshRec, staleRec] = listJobs(dir).sort((a, b) => a.id.localeCompare(b.id));
+  assert.equal(freshRec.status, 'starting');
+  assert.equal(staleRec.status, 'died');
+});
+
 test('pruneJobs removes old terminal jobs, keeps recent and running', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
   const old = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();

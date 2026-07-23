@@ -7,10 +7,16 @@ import { jobsDir, readJson, resolveDataDir } from './lib/state.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const RETENTION_MS = 7 * 24 * 3600 * 1000;
+const STARTING_STALE_MS = 3600_000;
 const TERMINAL = new Set(['done', 'failed', 'cancelled', 'died']);
 
 function recordFiles(dir, id) {
   return [`${id}.json`, `${id}.log`, `${id}.prompt`, `${id}.spec.json`].map((f) => join(dir, f));
+}
+
+function markDiedIfDead(rec) {
+  if (rec.status === 'running' && !isAlive(rec)) rec.status = 'died';
+  else if (rec.status === 'starting' && Date.now() - Date.parse(rec.startedAt ?? '') > STARTING_STALE_MS) rec.status = 'died';
 }
 
 export function listJobs(dir) {
@@ -19,7 +25,7 @@ export function listJobs(dir) {
     if (!f.endsWith('.json') || f.endsWith('.spec.json')) continue;
     const rec = readJson(join(dir, f));
     if (!rec?.id) continue;
-    if (rec.status === 'running' && !isAlive(rec)) rec.status = 'died';
+    markDiedIfDead(rec);
     records.push(rec);
   }
   return records.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
@@ -49,6 +55,7 @@ function main() {
     return;
   }
   const rec = id ? readJson(join(dir, `${id}.json`)) : null;
+  if (rec) markDiedIfDead(rec);
   if (cmd === 'result') {
     if (!rec) { process.stderr.write(`No such job: ${id}\n`); process.exit(1); }
     process.stdout.write(`Job ${rec.id}: ${rec.status}\n`);
