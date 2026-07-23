@@ -48,10 +48,21 @@ function flattenText(node) {
 }
 
 const PATH_KEYS = new Set(['path', 'file_path', 'filePath']);
+const PATCH_PATH_RE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+// Real Codex rollouts serialize apply_patch/custom_tool_call tool input as a
+// string (e.g. the "arguments" field), with paths embedded as patch markers
+// rather than as structured path fields.
+function extractPatchPaths(str) {
+  const paths = [];
+  for (const m of str.matchAll(PATCH_PATH_RE)) paths.push(m[1].trim());
+  return paths;
+}
+
 function findPaths(node, out, depth = 0) {
   if (!node || typeof node !== 'object' || depth > 6) return;
   for (const [k, v] of Object.entries(node)) {
     if (PATH_KEYS.has(k) && typeof v === 'string') out.add(v);
+    else if (typeof v === 'string') { for (const p of extractPatchPaths(v)) out.add(p); }
     else if (v && typeof v === 'object') findPaths(v, out, depth + 1);
   }
 }

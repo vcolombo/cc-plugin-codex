@@ -151,6 +151,17 @@ test('write-handoff redacts secrets in the narrative before writing', () => {
   assert.match(content, /\[REDACTED\]/);
 });
 
+test('extractEvidence finds apply_patch file paths inside a serialized string tool call', () => {
+  const line = JSON.stringify({
+    payload: {
+      type: 'custom_tool_call',
+      arguments: '*** Begin Patch\n*** Update File: src/secret.js\n@@\n-old\n+new\n*** End Patch',
+    },
+  });
+  const ev = extractEvidence(line);
+  assert.ok(ev.filesTouched.includes('src/secret.js'));
+});
+
 test('broken symlink named *.jsonl does not crash the walk', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
   const home = join(dir, '.codex');
