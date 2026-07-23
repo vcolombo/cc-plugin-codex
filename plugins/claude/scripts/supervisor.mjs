@@ -58,20 +58,23 @@ try {
   });
 
   let logged = 0;
-  let tail = '';
-  function sink(chunk) {
+  let stdoutTail = ''; // result event arrives last; only the tail matters. stdout-only so an
+  // interleaved stderr chunk can't corrupt a multi-chunk stream-json event.
+  function writeLog(chunk) {
     const s = chunk.toString();
-    tail = (tail + s).slice(-TAIL_CAP); // result event arrives last; only the tail matters
     if (logged < LOG_CAP) {
       appendFileSync(spec.logPath, s, { mode: 0o600 });
       logged += s.length;
     }
+    return s;
   }
-  child.stdout.on('data', sink);
-  child.stderr.on('data', sink);
+  child.stdout.on('data', (chunk) => {
+    stdoutTail = (stdoutTail + writeLog(chunk)).slice(-TAIL_CAP);
+  });
+  child.stderr.on('data', writeLog);
 
   child.on('close', (code) => {
-    const { sessionId, result, isError } = extractFromStream(tail);
+    const { sessionId, result, isError } = extractFromStream(stdoutTail);
     writeJsonAtomic(spec.recordPath, {
       ...readJson(spec.recordPath),
       status: cancelled ? 'cancelled' : code === 0 && !isError ? 'done' : 'failed',

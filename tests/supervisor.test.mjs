@@ -91,6 +91,16 @@ test('SIGTERM cancels the whole process group, killing grandchildren', async () 
   assert.throws(() => process.kill(gpid, 0), /ESRCH/);
 });
 
+test('interleaved stderr between split stdout chunks does not corrupt the result', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SPLIT_RESULT: '1' });
+  execFileSync('node', [SUP, specPath], { env });
+  const rec = readJson(spec.recordPath);
+  assert.equal(rec.status, 'done');
+  assert.equal(rec.result, 'FAKE RESULT');
+  assert.equal(rec.sessionId, 'sess-fake-123');
+});
+
 test('missing prompt file still finalizes the record as failed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sup-'));
   const { spec, specPath, env } = makeSpec(dir);

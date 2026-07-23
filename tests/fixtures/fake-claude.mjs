@@ -34,6 +34,20 @@ process.stdin.on('end', async () => {
   console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-fake-123' }));
   const sleep = Number(process.env.FAKE_CLAUDE_SLEEP_MS || 0);
   if (sleep) await new Promise((r) => setTimeout(r, sleep));
+
+  if (process.env.FAKE_CLAUDE_SPLIT_RESULT) {
+    const full = JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false, result: 'FAKE RESULT', session_id: 'sess-fake-123',
+    });
+    const mid = Math.floor(full.length / 2);
+    process.stdout.write(full.slice(0, mid));
+    await new Promise((r) => setTimeout(r, 20));
+    process.stderr.write('warning: noisy stderr line\n');
+    await new Promise((r) => setTimeout(r, 20));
+    process.stdout.write(`${full.slice(mid)}\n`);
+    process.exit(Number(process.env.FAKE_CLAUDE_EXIT || 0));
+  }
+
   console.log(JSON.stringify({
     type: 'result', subtype: 'success', is_error: false, result: 'FAKE RESULT', session_id: 'sess-fake-123',
   }));
