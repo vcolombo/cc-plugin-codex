@@ -139,19 +139,40 @@ function walkJsonl(root, out = []) {
 }
 
 // Reads at most CWD_SCAN_CAP bytes of a file's head; Codex session metadata
-// (cwd) appears near the top, so a full read isn't needed to check for it.
-function headContains(path, needle) {
+// (cwd) appears near the top, so a full read isn't needed to inspect it.
+function readHead(path) {
   let fd;
   try {
     fd = openSync(path, 'r');
     const buf = Buffer.alloc(CWD_SCAN_CAP);
     const bytesRead = readSync(fd, buf, 0, CWD_SCAN_CAP, 0);
-    return buf.toString('utf8', 0, bytesRead).includes(needle);
+    return buf.toString('utf8', 0, bytesRead);
   } catch {
-    return false;
+    return '';
   } finally {
     if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
   }
+}
+
+function hasCwdEqual(node, cwd, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 6) return false;
+  if (node.cwd === cwd) return true;
+  for (const v of Object.values(node)) {
+    if (v && typeof v === 'object' && hasCwdEqual(v, cwd, depth + 1)) return true;
+  }
+  return false;
+}
+
+// Match the transcript's own `cwd` metadata field EXACTLY — never a substring
+// of the file — so a workspace like /repo/app can't select an unrelated
+// session whose cwd is /repo/app-copy and leak its content into the handoff.
+function headHasCwd(path, cwd) {
+  for (const line of readHead(path).split('\n').slice(0, 50)) {
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; } // truncated/last partial line is skipped
+    if (hasCwdEqual(obj, cwd)) return true;
+  }
+  return false;
 }
 
 function resolveTranscript(env = process.env) {
@@ -166,29 +187,47 @@ function resolveTranscript(env = process.env) {
   const cwd = process.cwd();
   const matches = walkJsonl(join(codexHome(env), 'sessions'))
     .sort((a, b) => b.mtime - a.mtime)
-    .filter((c) => headContains(c.path, cwd));
+    .filter((c) => headHasCwd(c.path, cwd));
   if (matches.length === 1) return { transcriptPath: matches[0].path, sessionId };
   return { candidates: matches.slice(0, 20).map((m) => m.path), sessionId };
 }
 
-async function cmdExtract() {
-  const res = resolveTranscript();
-  if (!res.transcriptPath) {
-    process.stderr.write('Could not resolve the current Codex transcript.\n');
-    if (res.candidates?.length) {
-      process.stderr.write(`Candidates (ask the user which one):\n${res.candidates.join('\n')}\n`);
-    }
-    process.exit(2);
-  }
+async function streamEvidence(transcriptPath) {
   const acc = makeEvidenceAccumulator();
   const rl = createInterface({
-    input: createReadStream(res.transcriptPath, { encoding: 'utf8' }), crlfDelay: Infinity,
+    input: createReadStream(transcriptPath, { encoding: 'utf8' }), crlfDelay: Infinity,
   });
   for await (const line of rl) acc.pushLine(line);
-  const evidence = acc.finalize();
-  process.stdout.write(JSON.stringify({
-    sessionId: res.sessionId, transcriptPath: res.transcriptPath, ...evidence,
-  }, null, 2) + '\n');
+  return acc.finalize();
+}
+
+// `extract` with no arg auto-resolves the current transcript; on ambiguity it
+// prints candidate paths and exits 2. `extract <path>` extracts that specific
+// transcript — the actionable follow-up after the user picks a candidate.
+async function cmdExtract(explicitPath) {
+  let transcriptPath;
+  let sessionId;
+  if (explicitPath) {
+    if (!existsSync(explicitPath)) {
+      process.stderr.write(`No such transcript: ${explicitPath}\n`);
+      process.exit(2);
+    }
+    transcriptPath = explicitPath;
+    sessionId = process.env.CODEX_THREAD_ID ?? null;
+  } else {
+    const res = resolveTranscript();
+    if (!res.transcriptPath) {
+      process.stderr.write('Could not resolve the current Codex transcript.\n');
+      if (res.candidates?.length) {
+        process.stderr.write(`Candidates (ask the user which one, then re-run: extract <path>):\n${res.candidates.join('\n')}\n`);
+      }
+      process.exit(2);
+    }
+    transcriptPath = res.transcriptPath;
+    sessionId = res.sessionId;
+  }
+  const evidence = await streamEvidence(transcriptPath);
+  process.stdout.write(JSON.stringify({ sessionId, transcriptPath, ...evidence }, null, 2) + '\n');
 }
 
 async function cmdWriteHandoff() {
@@ -232,8 +271,8 @@ function cmdLaunch(path) {
 
 const [cmd, arg] = process.argv.slice(2);
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (cmd === 'extract') await cmdExtract();
+  if (cmd === 'extract') await cmdExtract(arg);
   else if (cmd === 'write-handoff') await cmdWriteHandoff();
   else if (cmd === 'launch' && arg) cmdLaunch(arg);
-  else { process.stderr.write('Usage: transfer.mjs extract | write-handoff | launch <path>\n'); process.exit(2); }
+  else { process.stderr.write('Usage: transfer.mjs extract [<path>] | write-handoff | launch <path>\n'); process.exit(2); }
 }

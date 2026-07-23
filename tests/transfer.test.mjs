@@ -219,10 +219,10 @@ test('fallback scan matches cwd beyond the 20 newest sessions', () => {
   const home = join(dir, '.codex');
   const sess = join(home, 'sessions');
   mkdirSync(sess, { recursive: true });
-  for (let i = 0; i < 25; i++) writeFileSync(join(sess, `other-${i}.jsonl`), JSON.stringify({ role: 'user', content: `unrelated ${i}` }) + '\n');
+  for (let i = 0; i < 25; i++) writeFileSync(join(sess, `other-${i}.jsonl`), JSON.stringify({ type: 'session_meta', cwd: `/unrelated/${i}` }) + '\n');
   // target written FIRST so it is the oldest by mtime
   const target = join(sess, 'target.jsonl');
-  writeFileSync(target, JSON.stringify({ role: 'user', content: `work in ${dir}` }) + '\n');
+  writeFileSync(target, JSON.stringify({ type: 'session_meta', cwd: dir }) + '\n');
   const past = new Date(Date.now() - 60_000);
   utimesSync(target, past, past);
   const env = { ...process.env, CODEX_HOME: home };
@@ -275,11 +275,40 @@ test('broken symlink named *.jsonl does not crash the walk', () => {
   mkdirSync(sess, { recursive: true });
   symlinkSync(join(sess, 'does-not-exist'), join(sess, 'dead.jsonl'));
   const target = join(sess, 'valid.jsonl');
-  writeFileSync(target, JSON.stringify({ role: 'user', content: `work in ${dir}` }) + '\n');
+  writeFileSync(target, JSON.stringify({ type: 'session_meta', cwd: dir }) + '\n');
   const env = { ...process.env, CODEX_HOME: home };
   delete env.CODEX_THREAD_ID;
   const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
   assert.equal(JSON.parse(out).transcriptPath, target);
+});
+
+test('fallback resolver matches the cwd field exactly, not a substring', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const home = join(dir, '.codex');
+  const sess = join(home, 'sessions');
+  mkdirSync(sess, { recursive: true });
+  // A different session whose cwd merely shares a prefix (dir + "-copy").
+  const decoy = join(sess, 'decoy.jsonl');
+  writeFileSync(decoy, JSON.stringify({ type: 'session_meta', cwd: `${dir}-copy` }) + '\n');
+  const env = { ...process.env, CODEX_HOME: home };
+  delete env.CODEX_THREAD_ID;
+  // Only the decoy exists; a substring match would wrongly select it. Exact
+  // matching finds no session for `dir`, so extract exits 2 (no leak).
+  const res = spawnSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
+  assert.equal(res.status, 2);
+  assert.doesNotMatch(res.stdout, new RegExp('decoy'));
+});
+
+test('extract accepts an explicit transcript path', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const t = join(dir, 'chosen.jsonl');
+  writeFileSync(t, JSON.stringify({ role: 'user', content: 'the goal' }) + '\n');
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  delete env.CODEX_THREAD_ID;
+  const out = execFileSync('node', [SCRIPT, 'extract', t], { cwd: dir, env, encoding: 'utf8' });
+  const ev = JSON.parse(out);
+  assert.equal(ev.transcriptPath, t);
+  assert.equal(ev.goals[0].text, 'the goal');
 });
 
 test('finalize hard-bounds total size even with huge paths and long goals', () => {

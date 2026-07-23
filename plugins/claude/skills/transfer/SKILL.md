@@ -26,8 +26,8 @@ any same-named `claude` plugin from another marketplace):
 
        SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | sort -V | tail -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | sort -V | tail -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/transfer.mjs" extract < /dev/null
    - Exit 2 with candidate transcripts listed: ask the user which one, then
-     re-run with `CODEX_THREAD_ID` unset is NOT the fix — instead pass the
-     chosen file by extracting evidence yourself from that path in step 2.
+     re-run the same command but with the chosen path as an argument —
+     `node "$SCRIPTS/transfer.mjs" extract "<chosen-path>" < /dev/null`.
    - Output is JSON: `goals`, `recent` (last exchanges), `filesTouched`.
 2. Compose the handoff narrative from the evidence AND your own knowledge of
    this session. Sections: Goal, Key decisions, Files touched, Current state,
