@@ -281,3 +281,14 @@ test('broken symlink named *.jsonl does not crash the walk', () => {
   const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
   assert.equal(JSON.parse(out).transcriptPath, target);
 });
+
+test('finalize hard-bounds total size even with huge paths and long goals', () => {
+  const lines = [];
+  // 3 long user goals (each MSG_CAP-capped) + many oversized apply_patch paths
+  for (let i = 0; i < 3; i++) lines.push(JSON.stringify({ role: 'user', content: 'g'.repeat(10_000) }));
+  for (let i = 0; i < 100; i++) {
+    lines.push(JSON.stringify({ payload: { input: `*** Add File: ${'p'.repeat(5000)}/${i}.js` } }));
+  }
+  const ev = extractEvidence(lines.join('\n'));
+  assert.ok(JSON.stringify(ev).length <= 150_000, `evidence size ${JSON.stringify(ev).length} exceeds cap`);
+});

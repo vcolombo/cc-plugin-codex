@@ -17,6 +17,7 @@ const MSG_CAP = 4000;
 const MAX_RECENT = 20;
 const TOTAL_CAP = 150_000;
 const MAX_FILES = 100;
+const PATH_CAP = 1024;
 const CWD_SCAN_CAP = 262_144;
 
 const REDACT_PATTERNS = [
@@ -100,10 +101,15 @@ export function makeEvidenceAccumulator() {
   }
 
   function finalize() {
-    const evidence = { goals, recent, filesTouched: [...files].slice(0, MAX_FILES) };
-    while (JSON.stringify(evidence).length > TOTAL_CAP && evidence.recent.length > 1) {
-      evidence.recent.shift();
-    }
+    const capPath = (p) => (p.length > PATH_CAP ? `${p.slice(0, PATH_CAP)}…` : p);
+    const evidence = { goals, recent, filesTouched: [...files].slice(0, MAX_FILES).map(capPath) };
+    const over = () => JSON.stringify(evidence).length > TOTAL_CAP;
+    // Trim every component, not just recent, so an adversarial transcript full of
+    // huge paths or long goals can't defeat the cap. Order: drop recent, then
+    // files, then extra goals; a single surviving goal is already MSG_CAP-bounded.
+    while (over() && evidence.recent.length > 1) evidence.recent.shift();
+    while (over() && evidence.filesTouched.length) evidence.filesTouched.pop();
+    while (over() && evidence.goals.length > 1) evidence.goals.pop();
     return evidence;
   }
 
