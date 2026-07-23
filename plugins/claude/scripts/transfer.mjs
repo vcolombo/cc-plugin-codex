@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  closeSync, existsSync, lstatSync, openSync, readFileSync, readdirSync, readSync, writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -12,6 +14,7 @@ const MSG_CAP = 4000;
 const MAX_RECENT = 20;
 const TOTAL_CAP = 150_000;
 const MAX_FILES = 100;
+const CWD_SCAN_CAP = 262_144;
 
 const REDACT_PATTERNS = [
   /AKIA[0-9A-Z]{16}/g,
@@ -75,9 +78,30 @@ function walkJsonl(root, out = []) {
   for (const e of entries) {
     const p = join(root, e.name);
     if (e.isDirectory()) walkJsonl(p, out);
-    else if (e.name.endsWith('.jsonl')) out.push({ path: p, mtime: statSync(p).mtimeMs });
+    else if (e.name.endsWith('.jsonl')) {
+      try {
+        const st = lstatSync(p);
+        if (st.isFile()) out.push({ path: p, mtime: st.mtimeMs });
+      } catch { /* skip unreadable entries (e.g. broken symlinks) */ }
+    }
   }
   return out;
+}
+
+// Reads at most CWD_SCAN_CAP bytes of a file's head; Codex session metadata
+// (cwd) appears near the top, so a full read isn't needed to check for it.
+function headContains(path, needle) {
+  let fd;
+  try {
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(CWD_SCAN_CAP);
+    const bytesRead = readSync(fd, buf, 0, CWD_SCAN_CAP, 0);
+    return buf.toString('utf8', 0, bytesRead).includes(needle);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
+  }
 }
 
 function resolveTranscript(env = process.env) {
@@ -92,9 +116,7 @@ function resolveTranscript(env = process.env) {
   const cwd = process.cwd();
   const matches = walkJsonl(join(codexHome(env), 'sessions'))
     .sort((a, b) => b.mtime - a.mtime)
-    .filter((c) => {
-      try { return readFileSync(c.path, 'utf8').includes(cwd); } catch { return false; }
-    });
+    .filter((c) => headContains(c.path, cwd));
   if (matches.length === 1) return { transcriptPath: matches[0].path, sessionId };
   return { candidates: matches.slice(0, 20).map((m) => m.path), sessionId };
 }
@@ -130,9 +152,14 @@ async function cmdWriteHandoff() {
 }
 
 function cmdLaunch(path) {
-  const content = readFileSync(path, 'utf8');
-  // Content as a single argv element: no shell, no interpolation. The fixed
-  // "# Handoff from Codex" header guarantees it cannot start with a dash.
+  let content = readFileSync(path, 'utf8');
+  // Content as a single argv element: no shell, no interpolation. Force the
+  // "# Handoff from Codex" header so content can't start with a dash and be
+  // parsed as a claude CLI flag (path is arbitrary, not necessarily our own
+  // write-handoff output).
+  if (!content.startsWith('# Handoff from Codex')) {
+    content = `# Handoff from Codex\n\n${content}`;
+  }
   const res = spawnSync(process.env.CLAUDE_BIN || 'claude', [content], { stdio: 'inherit' });
   process.exit(res.status ?? 1);
 }

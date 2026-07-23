@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, utimesSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, utimesSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,6 +77,20 @@ test('write-handoff prepends header and prints launch command; launch passes con
   assert.ok(cap.argv[0].startsWith('# Handoff from Codex'));
 });
 
+test('launch guards arbitrary file content that starts with a dash', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tr-'));
+  const path = join(dir, 'evil.txt');
+  writeFileSync(path, '--dangerously-skip-permissions and then some\n');
+  const capture = join(dir, 'cap.json');
+  execFileSync('node', [SCRIPT, 'launch', path], {
+    cwd: dir, encoding: 'utf8', input: '',
+    env: { ...process.env, CLAUDE_BIN: FAKE, FAKE_CLAUDE_CAPTURE: capture },
+  });
+  const cap = JSON.parse(readFileSync(capture, 'utf8'));
+  assert.equal(cap.argv.length, 1);
+  assert.ok(cap.argv[0].startsWith('# Handoff from Codex'));
+});
+
 test('redact scrubs vendor tokens and high-entropy runs but keeps git SHAs', () => {
   const s = redact([
     'github ghp_ABCdefGHIjklMNOpqrSTUvwxYZ0123456789',
@@ -103,6 +117,20 @@ test('fallback scan matches cwd beyond the 20 newest sessions', () => {
   writeFileSync(target, JSON.stringify({ role: 'user', content: `work in ${dir}` }) + '\n');
   const past = new Date(Date.now() - 60_000);
   utimesSync(target, past, past);
+  const env = { ...process.env, CODEX_HOME: home };
+  delete env.CODEX_THREAD_ID;
+  const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
+  assert.equal(JSON.parse(out).transcriptPath, target);
+});
+
+test('broken symlink named *.jsonl does not crash the walk', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tr-')));
+  const home = join(dir, '.codex');
+  const sess = join(home, 'sessions');
+  mkdirSync(sess, { recursive: true });
+  symlinkSync(join(sess, 'does-not-exist'), join(sess, 'dead.jsonl'));
+  const target = join(sess, 'valid.jsonl');
+  writeFileSync(target, JSON.stringify({ role: 'user', content: `work in ${dir}` }) + '\n');
   const env = { ...process.env, CODEX_HOME: home };
   delete env.CODEX_THREAD_ID;
   const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
