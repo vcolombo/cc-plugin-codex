@@ -49,7 +49,13 @@ export function pruneJobs(dir, now = Date.now()) {
 
 function main() {
   const [cmd, id] = process.argv.slice(2);
-  const dir = jobsDir(resolveDataDir({ scriptPath: SCRIPT_PATH }), process.cwd());
+  let dir;
+  try {
+    dir = jobsDir(resolveDataDir({ scriptPath: SCRIPT_PATH }), process.cwd());
+  } catch (err) {
+    process.stderr.write(`Cannot access the Claude jobs directory: ${err.message}\nThe Codex sandbox/approval policy must allow writes to the plugin data dir.\n`);
+    process.exit(1);
+  }
   pruneJobs(dir);
   if (cmd === 'list') {
     const jobs = listJobs(dir);

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jobsDir, readJson, writeJsonAtomic, resolveDataDir } from '../plugins/claude/scripts/lib/state.mjs';
+import { jobsDir, readJson, writeJsonAtomic, resolveDataDir, workspaceKey } from '../plugins/claude/scripts/lib/state.mjs';
 import { psStart } from '../plugins/claude/scripts/lib/proc.mjs';
 import { listJobs, pruneJobs } from '../plugins/claude/scripts/jobs.mjs';
 
@@ -117,4 +117,20 @@ test('cancel/result reject an unsafe argv id before touching the filesystem', ()
   const res = spawnSync('node', [JOBS, 'result', '../../etc/passwd'], { cwd: dir, env, encoding: 'utf8' });
   assert.equal(res.status, 1);
   assert.match(res.stderr, /Invalid job id/);
+});
+
+
+test('jobs reports a clean error when the jobs dir cannot be created', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jobs-')));
+  const codexHome = join(dir, '.codex');
+  const jobsBase = join(codexHome, 'plugins', 'data', 'claude-cc-plugin-codex', 'jobs');
+  mkdirSync(jobsBase, { recursive: true });
+  // Block the per-workspace jobs subdir with a regular file so mkdir fails.
+  writeFileSync(join(jobsBase, workspaceKey(dir)), 'not a dir');
+  const res = spawnSync('node', [JOBS, 'list'], {
+    cwd: dir, encoding: 'utf8', env: { ...process.env, CODEX_HOME: codexHome },
+  });
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /Cannot access the Claude jobs directory/);
+  assert.doesNotMatch(res.stderr, /at main|node:internal/);
 });

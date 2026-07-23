@@ -26,6 +26,18 @@ function makeSpec(dir, extraEnv = {}) {
   return { spec, specPath, env: { ...process.env, CLAUDE_BIN: FAKE, ...extraEnv } };
 }
 
+// Bounded poll so a supervisor that never starts fails the test with a clear
+// timeout instead of hanging the whole suite.
+function waitForStatus(recordPath, status, timeoutMs = 10_000) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const t = setInterval(() => {
+      if (readJson(recordPath)?.status === status) { clearInterval(t); resolve(); }
+      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error(`timed out waiting for status '${status}'`)); }
+    }, 50);
+  });
+}
+
 test('supervisor finalizes a successful job', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sup-'));
   const { spec, specPath, env } = makeSpec(dir);
@@ -50,11 +62,7 @@ test('SIGTERM cancels and still finalizes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sup-'));
   const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SLEEP_MS: '15000' });
   const sup = spawn('node', [SUP, specPath], { env });
-  await new Promise((resolve) => {
-    const t = setInterval(() => {
-      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
-    }, 100);
-  });
+  await waitForStatus(spec.recordPath, 'running');
   sup.kill('SIGTERM');
   await new Promise((resolve) => sup.on('close', resolve));
   const rec = readJson(spec.recordPath);
@@ -69,11 +77,7 @@ test('SIGTERM cancels the whole process group, killing grandchildren', async () 
     FAKE_CLAUDE_SLEEP_MS: '15000',
   });
   const sup = spawn('node', [SUP, specPath], { env });
-  await new Promise((resolve) => {
-    const t = setInterval(() => {
-      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
-    }, 100);
-  });
+  await waitForStatus(spec.recordPath, 'running');
   let gpid;
   await new Promise((resolve, reject) => {
     const started = Date.now();
@@ -99,11 +103,7 @@ test('SIGTERM cancel SIGKILLs a SIGTERM-resistant grandchild before the supervis
     FAKE_CLAUDE_SLEEP_MS: '15000',
   });
   const sup = spawn('node', [SUP, specPath], { env });
-  await new Promise((resolve) => {
-    const t = setInterval(() => {
-      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
-    }, 100);
-  });
+  await waitForStatus(spec.recordPath, 'running');
   let gpid;
   await new Promise((resolve, reject) => {
     const started = Date.now();
@@ -160,11 +160,7 @@ test('a log-write failure mid-run still finalizes the record instead of crashing
   const dir = mkdtempSync(join(tmpdir(), 'sup-'));
   const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SLEEP_MS: '300' });
   const sup = spawn('node', [SUP, specPath], { env });
-  await new Promise((resolve) => {
-    const t = setInterval(() => {
-      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
-    }, 20);
-  });
+  await waitForStatus(spec.recordPath, 'running');
   // Swap the log file for a directory mid-run: the next appendFileSync in the
   // stdout/stderr 'data' handlers throws EISDIR, outside the setup try/catch.
   rmSync(spec.logPath);
