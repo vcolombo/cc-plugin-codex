@@ -47,6 +47,7 @@ try {
     setTimeout(() => killGroup(child.pid, 'SIGKILL'), 10_000).unref();
   });
 
+  child.stdin.on('error', () => {}); // e.g. EPIPE if Claude exits before reading the prompt
   child.stdin.end(readFileSync(spec.promptPath, 'utf8'));
 
   writeJsonAtomic(spec.recordPath, {
