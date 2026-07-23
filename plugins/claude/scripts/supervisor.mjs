@@ -25,6 +25,27 @@ function killGroup(pid, signal) {
   catch { try { process.kill(pid, signal); } catch { /* already gone */ } }
 }
 
+// Safety net for throws that happen outside the setup try/catch below - e.g.
+// inside the async stdout/stderr 'data' callbacks (a log-write EIO, the log
+// path replaced by a directory, disk full). Without this the record could be
+// stuck 'running' forever. Only finalizes if nothing else already did.
+function finalizeOnCrash(err) {
+  try {
+    const rec = readJson(spec.recordPath);
+    if (rec && (rec.status === 'starting' || rec.status === 'running')) {
+      writeJsonAtomic(spec.recordPath, {
+        ...rec,
+        status: 'failed',
+        error: String(err?.message ?? err).slice(0, 500),
+        endedAt: new Date().toISOString(),
+      });
+    }
+  } catch { /* best effort - the process is exiting either way */ }
+  process.exit(1);
+}
+process.on('uncaughtException', finalizeOnCrash);
+process.on('unhandledRejection', finalizeOnCrash);
+
 try {
   writeFileSync(spec.logPath, '', { flag: 'wx', mode: 0o600 });
 
@@ -67,8 +88,13 @@ try {
   function writeLog(chunk) {
     // chunk is already a decoded string (setEncoding('utf8') above).
     if (logged < LOG_CAP) {
-      appendFileSync(spec.logPath, chunk, { mode: 0o600 });
-      logged += chunk.length;
+      // Best-effort: logging is a convenience, not the job outcome. A write
+      // failure here (EIO, disk full, log path replaced by a directory)
+      // must not take down the supervisor with the record stuck 'running'.
+      try {
+        appendFileSync(spec.logPath, chunk, { mode: 0o600 });
+        logged += chunk.length;
+      } catch { /* swallowed - see finalizeOnCrash for the remaining safety net */ }
     }
     return chunk;
   }

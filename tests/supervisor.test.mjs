@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,4 +154,28 @@ test('missing prompt file still finalizes the record as failed', () => {
   assert.equal(rec.status, 'failed');
   assert.ok(rec.endedAt);
   assert.match(rec.error, /ENOENT|no such file/i);
+});
+
+test('a log-write failure mid-run still finalizes the record instead of crashing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SLEEP_MS: '300' });
+  const sup = spawn('node', [SUP, specPath], { env });
+  await new Promise((resolve) => {
+    const t = setInterval(() => {
+      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
+    }, 20);
+  });
+  // Swap the log file for a directory mid-run: the next appendFileSync in the
+  // stdout/stderr 'data' handlers throws EISDIR, outside the setup try/catch.
+  rmSync(spec.logPath);
+  mkdirSync(spec.logPath);
+  await new Promise((resolve) => sup.on('close', resolve));
+  const rec = readJson(spec.recordPath);
+  assert.notEqual(rec.status, 'running');
+  assert.ok(rec.endedAt);
+  // Best-effort logging should swallow the write failure rather than crash
+  // the supervisor, so the job still finalizes 'done' with its result.
+  assert.equal(rec.status, 'done');
+  assert.equal(rec.result, 'FAKE RESULT');
+  assert.equal(rec.sessionId, 'sess-fake-123');
 });
