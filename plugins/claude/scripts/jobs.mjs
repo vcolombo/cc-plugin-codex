@@ -72,7 +72,13 @@ function main() {
   if (cmd === 'cancel') {
     if (!rec) { process.stderr.write(`No such job: ${id}\n`); process.exit(1); }
     if (!isAlive(rec)) { process.stdout.write(`Job ${id} is not running (status: ${rec.status}).\n`); return; }
-    process.kill(rec.pid, 'SIGTERM'); // supervisor traps this, forwards to Claude, finalizes the record
+    try {
+      process.kill(rec.pid, 'SIGTERM'); // supervisor traps this, forwards to Claude, finalizes the record
+    } catch {
+      // Supervisor exited between the isAlive() check and here (TOCTOU) — the job is already ending.
+      process.stdout.write(`Job ${id} already stopped.\n`);
+      return;
+    }
     process.stdout.write(`Sent cancel to job ${id}. Check $claude:status shortly.\n`);
     return;
   }
