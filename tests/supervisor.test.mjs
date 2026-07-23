@@ -91,6 +91,50 @@ test('SIGTERM cancels the whole process group, killing grandchildren', async () 
   assert.throws(() => process.kill(gpid, 0), /ESRCH/);
 });
 
+test('SIGTERM cancel SIGKILLs a SIGTERM-resistant grandchild before the supervisor exits', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir, {
+    FAKE_CLAUDE_SPAWN_GRANDCHILD: '1',
+    FAKE_CLAUDE_GRANDCHILD_IGNORE_SIGTERM: '1',
+    FAKE_CLAUDE_SLEEP_MS: '15000',
+  });
+  const sup = spawn('node', [SUP, specPath], { env });
+  await new Promise((resolve) => {
+    const t = setInterval(() => {
+      if (readJson(spec.recordPath)?.status === 'running') { clearInterval(t); resolve(); }
+    }, 100);
+  });
+  let gpid;
+  await new Promise((resolve, reject) => {
+    const started = Date.now();
+    const t = setInterval(() => {
+      const log = existsSync(spec.logPath) ? readFileSync(spec.logPath, 'utf8') : '';
+      const m = log.match(/"type":"grandchild","pid":(\d+)/);
+      if (m) { gpid = Number(m[1]); clearInterval(t); resolve(); }
+      else if (Date.now() - started > 5000) { clearInterval(t); reject(new Error('grandchild pid never appeared in log')); }
+    }, 50);
+  });
+  // Give the freshly-spawned grandchild time to install its SIGTERM
+  // listener before we cancel - otherwise the signal can race the
+  // interpreter's own startup and kill it the "normal" way, masking the bug.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  sup.kill('SIGTERM');
+  await new Promise((resolve) => sup.on('close', resolve));
+  assert.equal(readJson(spec.recordPath).status, 'cancelled');
+  await new Promise((resolve) => setTimeout(resolve, 500)); // let the SIGKILL sweep finish
+  assert.throws(() => process.kill(gpid, 0), /ESRCH/);
+});
+
+test('a multibyte char split across stdout chunks is decoded intact', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sup-'));
+  const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SPLIT_UTF8: '1' });
+  execFileSync('node', [SUP, specPath], { env });
+  const rec = readJson(spec.recordPath);
+  assert.equal(rec.status, 'done');
+  assert.equal(rec.result, 'café');
+  assert.equal(rec.sessionId, 'sess-fake-123');
+});
+
 test('interleaved stderr between split stdout chunks does not corrupt the result', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sup-'));
   const { spec, specPath, env } = makeSpec(dir, { FAKE_CLAUDE_SPLIT_RESULT: '1' });

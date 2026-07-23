@@ -35,6 +35,10 @@ try {
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: true,
   });
+  // Decode as text at the stream level so a multibyte char split across two
+  // Buffer chunks is reassembled correctly instead of yielding U+FFFD.
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
 
   // Installed before the 'running' record is written: a cancel racing the
   // supervisor startup must still forward to the child and still land a
@@ -61,12 +65,12 @@ try {
   let stdoutTail = ''; // result event arrives last; only the tail matters. stdout-only so an
   // interleaved stderr chunk can't corrupt a multi-chunk stream-json event.
   function writeLog(chunk) {
-    const s = chunk.toString();
+    // chunk is already a decoded string (setEncoding('utf8') above).
     if (logged < LOG_CAP) {
-      appendFileSync(spec.logPath, s, { mode: 0o600 });
-      logged += s.length;
+      appendFileSync(spec.logPath, chunk, { mode: 0o600 });
+      logged += chunk.length;
     }
-    return s;
+    return chunk;
   }
   child.stdout.on('data', (chunk) => {
     stdoutTail = (stdoutTail + writeLog(chunk)).slice(-TAIL_CAP);
@@ -74,6 +78,12 @@ try {
   child.stderr.on('data', writeLog);
 
   child.on('close', (code) => {
+    // The direct child closing doesn't mean the group is empty: a
+    // SIGTERM-resistant grandchild (e.g. ignoring SIGTERM) can outlive it.
+    // Sweep with SIGKILL now, synchronously, before this process exits -
+    // don't rely solely on the 10s escalation timer below, which never
+    // fires once process.exit() runs.
+    if (cancelled) killGroup(child.pid, 'SIGKILL');
     const { sessionId, result, isError } = extractFromStream(stdoutTail);
     writeJsonAtomic(spec.recordPath, {
       ...readJson(spec.recordPath),

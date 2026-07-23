@@ -27,7 +27,10 @@ process.stdin.on('end', async () => {
   if (process.env.FAKE_CLAUDE_SPAWN_GRANDCHILD) {
     // Not detached: it stays in this process's group, like a real Bash-tool
     // subprocess, so a process-group cancel should reach it too.
-    const gc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    const gcCode = process.env.FAKE_CLAUDE_GRANDCHILD_IGNORE_SIGTERM
+      ? "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"
+      : 'setInterval(() => {}, 1000)';
+    const gc = spawn(process.execPath, ['-e', gcCode], { stdio: 'ignore' });
     gc.unref();
     console.log(JSON.stringify({ type: 'grandchild', pid: gc.pid }));
   }
@@ -45,6 +48,20 @@ process.stdin.on('end', async () => {
     process.stderr.write('warning: noisy stderr line\n');
     await new Promise((r) => setTimeout(r, 20));
     process.stdout.write(`${full.slice(mid)}\n`);
+    process.exit(Number(process.env.FAKE_CLAUDE_EXIT || 0));
+  }
+
+  if (process.env.FAKE_CLAUDE_SPLIT_UTF8) {
+    // Raw Buffer writes (bypassing console.log's own string handling) so the
+    // multibyte char 'é' (UTF-8 bytes 0xC3 0xA9) lands split across two
+    // separate stdout chunks.
+    const full = Buffer.from(`${JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false, result: 'café', session_id: 'sess-fake-123',
+    })}\n`, 'utf8');
+    const splitAt = full.indexOf(Buffer.from('é', 'utf8')) + 1; // mid-character
+    process.stdout.write(full.subarray(0, splitAt));
+    await new Promise((r) => setTimeout(r, 20));
+    process.stdout.write(full.subarray(splitAt));
     process.exit(Number(process.env.FAKE_CLAUDE_EXIT || 0));
   }
 
