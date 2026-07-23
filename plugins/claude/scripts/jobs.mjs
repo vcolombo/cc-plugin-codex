@@ -9,6 +9,11 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const RETENTION_MS = 7 * 24 * 3600 * 1000;
 const STARTING_STALE_MS = 3600_000;
 const TERMINAL = new Set(['done', 'failed', 'cancelled', 'died']);
+// Job ids are generated from base36 time + hex random, so they never contain
+// path separators. Validate before any id reaches a filesystem path, so a
+// corrupted/hand-planted record (or a crafted argv id) can't traverse out of
+// the jobs dir when files are deleted or read.
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 function recordFiles(dir, id) {
   return [`${id}.json`, `${id}.log`, `${id}.prompt`, `${id}.spec.json`].map((f) => join(dir, f));
@@ -24,7 +29,7 @@ export function listJobs(dir) {
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.json') || f.endsWith('.spec.json')) continue;
     const rec = readJson(join(dir, f));
-    if (!rec?.id) continue;
+    if (!rec?.id || !SAFE_ID.test(rec.id)) continue;
     markDiedIfDead(rec);
     records.push(rec);
   }
@@ -54,6 +59,7 @@ function main() {
     }
     return;
   }
+  if (id && !SAFE_ID.test(id)) { process.stderr.write(`Invalid job id: ${id}\n`); process.exit(1); }
   const rec = id ? readJson(join(dir, `${id}.json`)) : null;
   if (rec) markDiedIfDead(rec);
   if (cmd === 'result') {

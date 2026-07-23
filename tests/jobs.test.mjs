@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -101,4 +101,20 @@ test('end-to-end: run-claude --background produces a finished job visible to job
   const result = execFileSync('node', [JOBS, 'result', id], { cwd: dir, env, encoding: 'utf8' });
   assert.match(result, /FAKE RESULT/);
   assert.match(result, /sess-fake-123/);
+});
+
+test('listJobs skips records whose id is unsafe (path traversal)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
+  writeJsonAtomic(join(dir, 'evil.json'), { id: '../../escape', status: 'done', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() });
+  writeJsonAtomic(join(dir, 'ok.json'), { id: 'ok', status: 'done', startedAt: new Date().toISOString() });
+  const ids = listJobs(dir).map((r) => r.id);
+  assert.deepEqual(ids, ['ok']);
+});
+
+test('cancel/result reject an unsafe argv id before touching the filesystem', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  const res = spawnSync('node', [JOBS, 'result', '../../etc/passwd'], { cwd: dir, env, encoding: 'utf8' });
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /Invalid job id/);
 });
