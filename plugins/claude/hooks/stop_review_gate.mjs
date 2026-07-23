@@ -10,9 +10,10 @@ import { gateFlagPath, resolveDataDir } from '../scripts/lib/state.mjs';
 const TIMEOUT_MS = 180_000; // well under Codex's 10-minute hook default
 const MAX_INPUT = 50_000;
 const MAX_REASON = 2_000;
+const MAX_EVENT = 1_000_000;
 
 let input = '';
-process.stdin.on('data', (d) => { input += d; });
+process.stdin.on('data', (d) => { if (input.length < MAX_EVENT) input += d; });
 process.stdin.on('end', () => {
   try {
     main(JSON.parse(input));
