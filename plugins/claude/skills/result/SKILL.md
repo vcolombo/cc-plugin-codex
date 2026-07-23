@@ -9,7 +9,7 @@ description: Fetch the result of a background Claude Code job
 
 Resolve the scripts directory once (single glob match expected):
 
-    SCRIPTS=$(ls -d ~/.codex/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
+    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
 
 If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinstall the plugin.
 

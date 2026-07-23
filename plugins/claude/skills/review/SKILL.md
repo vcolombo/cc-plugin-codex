@@ -12,7 +12,7 @@ Runs Claude Code in a locked-down read-only mode over precomputed git evidence
 
 Resolve the scripts directory once (single glob match expected):
 
-    SCRIPTS=$(ls -d ~/.codex/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
+    SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1)
 
 If `$SCRIPTS` is empty the plugin install is broken — tell the user to reinstall the plugin.
 
