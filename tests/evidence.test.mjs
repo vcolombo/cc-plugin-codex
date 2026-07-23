@@ -12,6 +12,8 @@ function initRepo() {
   g('init', '-q');
   g('config', 'user.email', 't@t');
   g('config', 'user.name', 't');
+  g('config', 'commit.gpgsign', 'false'); // tests must not depend on the dev's commit-signing setup
+  g('config', 'tag.gpgsign', 'false');
   writeFileSync(join(dir, 'a.txt'), 'one\n');
   g('add', '.');
   g('commit', '-qm', 'init');
