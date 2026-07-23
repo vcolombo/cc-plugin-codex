@@ -30,7 +30,7 @@ any same-named `claude` plugin from another marketplace):
 
        SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/run-claude.mjs" review [--base <ref>] [--background] < /dev/null
 
-2. Foreground: relay Claude's findings verbatim, including the trailing
-   `Claude session: <id>` line. Background: relay the printed job id and point
-   the user at `$claude:status`.
+2. Foreground: relay Claude's findings verbatim. Background: relay the printed
+   job id and point the user at `$claude:status`. (Review runs are not
+   resumable, so no `Claude session:` line is printed.)
 3. If it fails with a missing-binary or auth error, run `$claude:setup`.

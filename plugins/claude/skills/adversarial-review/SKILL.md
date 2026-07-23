@@ -34,4 +34,5 @@ any same-named `claude` plugin from another marketplace):
        SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/run-claude.mjs" review --adversarial [--base <ref>] [--background] < /tmp/claude-focus.txt
 
    (use `< /dev/null` when there is no focus text)
-3. Relay findings verbatim, including the `Claude session:` line.
+3. Relay findings verbatim. (Review runs are not resumable, so no
+   `Claude session:` line is printed.)

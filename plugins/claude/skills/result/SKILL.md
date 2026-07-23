@@ -24,5 +24,5 @@ any same-named `claude` plugin from another marketplace):
 
        SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/cc-plugin-codex/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && SCRIPTS=$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/claude/*/scripts 2>/dev/null | head -1); [ -z "$SCRIPTS" ] && { echo "cc-plugin-codex scripts not found; reinstall the plugin"; exit 1; }; node "$SCRIPTS/jobs.mjs" result <id>
 
-3. Relay the result, including any `Claude session:` line (usable with
-   `$claude:rescue --resume <id>`).
+3. Relay the result. Rescue jobs also print a `Claude session:` line usable
+   with `$claude:rescue --resume <id>`; review jobs do not (not resumable).

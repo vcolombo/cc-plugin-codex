@@ -60,7 +60,8 @@ function main() {
     if (!rec) { process.stderr.write(`No such job: ${id}\n`); process.exit(1); }
     process.stdout.write(`Job ${rec.id}: ${rec.status}\n`);
     if (rec.result) process.stdout.write(`\n${rec.result}\n`);
-    if (rec.sessionId) process.stdout.write(`\nClaude session: ${rec.sessionId}\n`);
+    // Only rescue sessions are resumable; review runs use --no-session-persistence.
+    if (rec.sessionId && rec.mode === 'rescue') process.stdout.write(`\nClaude session: ${rec.sessionId}\n`);
     if (rec.status === 'failed' || rec.status === 'died') {
       let logTail = '';
       try { logTail = readFileSync(join(dir, `${rec.id}.log`), 'utf8').slice(-2000); } catch { /* no log */ }

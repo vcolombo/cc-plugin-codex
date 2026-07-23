@@ -35,6 +35,17 @@ test('result detects a died supervisor and shows the log tail', () => {
   assert.match(out, /last words from claude/);
 });
 
+test('result prints a resumable session id for rescue jobs but not review jobs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
+  const jdir = jobsDir(resolveDataDir({ env }), dir);
+  const base = { status: 'done', startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), sessionId: 'sess-x', result: 'ok' };
+  writeJsonAtomic(join(jdir, 'resc.json'), { ...base, id: 'resc', mode: 'rescue' });
+  writeJsonAtomic(join(jdir, 'rev.json'), { ...base, id: 'rev', mode: 'review' });
+  assert.match(execFileSync('node', [JOBS, 'result', 'resc'], { cwd: dir, env, encoding: 'utf8' }), /Claude session: sess-x/);
+  assert.doesNotMatch(execFileSync('node', [JOBS, 'result', 'rev'], { cwd: dir, env, encoding: 'utf8' }), /Claude session:/);
+});
+
 test('listJobs flags stale starting jobs as died, keeps fresh ones starting', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jobs-'));
   const stale = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
