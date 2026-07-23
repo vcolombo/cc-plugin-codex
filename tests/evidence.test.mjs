@@ -49,6 +49,11 @@ test('caps oversized untracked files with truncation marker', () => {
   assert.match(ev, /truncated at /);
 });
 
+test('--base ref that does not exist throws', () => {
+  const { dir } = initRepo();
+  assert.throws(() => buildReviewEvidence({ cwd: dir, base: 'no-such-ref' }), /--base ref not found/);
+});
+
 test('untracked symlinks are not dereferenced', () => {
   const { dir } = initRepo();
   writeFileSync(join(dir, 'secret-target.txt'), 'SECRET-CONTENT\n');

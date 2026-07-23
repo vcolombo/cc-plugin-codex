@@ -20,6 +20,13 @@ function cap(text, limit) {
 }
 
 export function buildReviewEvidence({ cwd, base = null }) {
+  if (base) {
+    try {
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd, encoding: 'utf8' });
+    } catch {
+      throw new Error(`--base ref not found: ${base}`);
+    }
+  }
   const sections = [`# Review evidence\n\nRepository: ${cwd}\n`];
   sections.push(`## git status\n\n\`\`\`\n${git(cwd, 'status', '--porcelain')}\`\`\`\n`);
   if (base) {
