@@ -2,9 +2,9 @@
 
 ## Context
 
-openai/codex-plugin-cc lets Claude Code users invoke Codex (review, delegate, session transfer). Goal: the exact reverse — a **Codex plugin** that invokes **Claude Code** from inside Codex CLI. Repo `/Users/colombov/git/cc-plugin-codex` is empty; greenfield.
+openai/codex-plugin-cc lets Claude Code users invoke Codex (review, delegate, session transfer). Goal: the exact reverse — a **Codex plugin** that invokes **Claude Code** from inside Codex CLI. Repo `/Users/colombov/git/cc-plugin-codex` is greenfield.
 
-Codex CLI 0.145.0 plugin system: `.codex-plugin/plugin.json` manifest, `skills/<name>/SKILL.md` (namespaced `claude:review`, invoked via `@` mentions), convention-discovered `hooks/hooks.json` (Claude-shaped command-hook JSON; prompt/agent/async hooks unsupported), marketplace catalogs, `codex plugin marketplace add`. Plan reviewed by Codex against codex-rs source; corrections incorporated below.
+Codex CLI 0.145.0 plugin system: `.codex-plugin/plugin.json` manifest, `skills/<name>/SKILL.md` (namespaced, explicitly invoked as `$claude:review`; `@claude` mentions the plugin generally), convention-discovered `hooks/hooks.json` (Claude-shaped command-hook JSON; prompt/agent/async hooks unsupported), marketplace catalogs, `codex plugin marketplace add`. Spec reviewed twice by Codex against codex-rs source and installed binaries (Codex 0.145.0, Claude Code 2.1.218); all findings incorporated.
 
 ## Decisions (user-confirmed)
 
@@ -14,14 +14,16 @@ Codex CLI 0.145.0 plugin system: `.codex-plugin/plugin.json` manifest, `skills/<
 - **Permissions:** delegated tasks default `--permission-mode acceptEdits`; `--yolo` flag opts into `--dangerously-skip-permissions`; reviews locked down (below)
 - **Architecture:** skills + CLI scripts wrapping local `claude` binary; no MCP server
 
-## Hard constraints (from Codex review, verified against codex-rs)
+## Hard constraints (verified against codex-rs + installed binaries)
 
-1. **`PLUGIN_DATA`/`PLUGIN_ROOT` env vars are injected ONLY into hook processes**, not skill-launched scripts. Scripts get a shared state resolver (`scripts/lib/state.mjs`): derive data dir from Codex home (`~/.codex/plugins/data/claude/` or equivalent), partition by workspace path hash + `CODEX_THREAD_ID`.
-2. **Skill invocation is namespaced:** `@claude:review`, `@claude:rescue`, etc. No `$ARGUMENTS` interpolation in Codex skills — SKILL.md instructs the model to extract user flags/text and pass them as script argv. Each SKILL.md documents exact argv contract.
-3. **Manifest:** omit `hooks` field (official validator rejects it; runtime discovers `hooks/hooks.json` by convention). Include all validator-required metadata: `name`, strict-semver `version`, `description`, `author`, `interface` (displayName, shortDescription, category, capabilities).
-4. **Blocking Stop hooks supported** on 0.145.0: block via exit `0` + stdout `{"decision":"block","reason":"..."}` or exit `2` + stderr. Other non-zero = hook failure, does NOT block. Hook must check `stop_hook_active` to prevent loops. Plugin hooks are untrusted until user approves them.
-5. **Parent Codex sandbox applies to everything.** Nested `claude` needs network + writes to `~/.claude`. Document as runtime requirement; `@claude:setup` detects and explains when Codex approval policy blocks this.
-6. **macOS/Linux only** for v1 (process-group management). Declare in README.
+1. **Plugin data dir is `CODEX_HOME/plugins/data/<plugin>-<marketplace>`** — for this catalog: `~/.codex/plugins/data/claude-cc-plugin-codex`. Codex injects `PLUGIN_DATA`/`PLUGIN_ROOT` **only into hook processes**; skill-launched scripts get neither, and the hook environment does not propagate. Shared resolver (`scripts/lib/state.mjs`): hooks use `$PLUGIN_DATA` when present; scripts derive the same path (marketplace component derived from the installed cache path, canonical marketplace name `cc-plugin-codex` as fallback) and create it if missing (`0700`). State partitioned by workspace path hash + session id. A mismatch between hook-written and script-read stores breaks transfer and the gate flag — contract test required.
+2. **Skill invocation:** explicit form is `$claude:review`, `$claude:rescue`, etc. No `$ARGUMENTS` interpolation — SKILL.md instructs the model to extract user flags/text and pass them as script argv. Each SKILL.md documents exact argv contract. Prompts and handoff text pass via **stdin or files, never shell interpolation or argv**.
+3. **Manifest:** omit `hooks` field (validator rejects; runtime discovers `hooks/hooks.json`). Validator-required metadata: `name`, strict-semver `version`, `description`, `author`, `interface` with `displayName`, `shortDescription`, `longDescription`, `developerName`, `defaultPrompt`, `category`, `capabilities`.
+4. **Blocking Stop hooks:** block via exit `0` + stdout `{"decision":"block","reason":"..."}` or exit `2` + stderr. Other non-zero = hook failure, does NOT block. Must check `stop_hook_active` to prevent loops. Hook stdin fields `transcript_path` and `last_assistant_message` are **nullable**. Plugin hooks untrusted until user approves.
+5. **Sandbox split:** skill-launched scripts run as ordinary Codex tool calls **inside** the Codex sandbox — they need approval for network, `~/.claude`, and writes to their own `~/.codex/plugins/data/...`. `--yolo` affects only nested Claude, never the Codex sandbox. **Trusted hooks run OUTSIDE the tool sandbox** (spawned directly) — the Stop gate is a real security boundary: README warning + Claude-side lockdown mandatory.
+6. **`claude -p --output-format stream-json` requires `--verbose`** (hard error otherwise on 2.1.218).
+7. **Auth check:** `claude auth status --json` exists (2.1.218); returns JSON on stdout even when logged out with non-zero exit — parse stdout regardless of exit code.
+8. **macOS/Linux only** for v1 (process-group management). Declare in README.
 
 ## Repo layout
 
@@ -49,7 +51,7 @@ cc-plugin-codex/
       jobs.mjs              # status / result / cancel
       transfer.mjs          # transcript extraction → handoff evidence
       setup.mjs
-      lib/state.mjs         # state dir resolver, atomic JSON writes, locking, retention
+      lib/state.mjs         # data-dir resolver, atomic symlink-safe writes (0600), locking, retention
       lib/stream.mjs        # stream-json parsing (result, session id)
   tests/
   package.json              # test script only, no deps
@@ -59,35 +61,35 @@ cc-plugin-codex/
 
 ## Skills
 
-1. **review** — read-only review of uncommitted changes or `--base <ref>`. Script precomputes diff outside Claude (`git status --porcelain`, `git diff`, untracked files) into a temp file; runs `claude -p` with review prompt over that evidence, `--safe-mode`-equivalent lockdown: `--allowedTools "Read,Glob,Grep"`, **no Bash**, `--no-session-persistence`. `--wait` (default) / `--background`.
+1. **review** — read-only review of uncommitted changes or `--base <ref>`. Script precomputes ALL evidence outside Claude into a temp file — semantics: staged + unstaged diffs, untracked file contents (text only), `--base` uses merge-base; binaries/submodules listed by name only; per-file and total size caps with truncation markers. Claude runs `claude -p --safe-mode --tools "Read,Glob,Grep" --no-session-persistence` over the evidence file (`--tools` restricts inventory; `--allowedTools` alone does NOT remove tools). `--wait` (default) / `--background`.
 2. **adversarial-review** — same mechanics; accepts focus text; prompt challenges design choices/tradeoffs/risks.
-3. **rescue** — delegate task. Flags: `--model <opus|sonnet|haiku|fable|full-id>`, `--resume <claude-session-id>`, `--fresh`, `--yolo`, `--background`. `claude -p "<task>" --permission-mode acceptEdits --output-format stream-json`. Surfaces Claude session id for later `--resume`.
-4. **transfer** — `transfer.mjs` reads transcript path captured by SessionStart hook (fallback: newest session JSONL in `~/.codex/sessions` matching cwd). Extracts bounded evidence: user goal messages, files touched (tool calls), git state, last N exchanges — with size limits and secret redaction. SKILL.md then has **Codex itself** compose the handoff summary from that evidence, write it via script to state dir, and print ready-to-run `claude "$(cat <path>)"`. (Deterministic parsing extracts evidence; the model writes the narrative — parser can't infer "key decisions".)
-5. **status / result / cancel** — `jobs.mjs` over per-workspace job dir. Liveness = pid + start-time match (guards pid reuse). Cancel = SIGTERM to process group.
-6. **setup** — check `claude` on PATH (offer `npm i -g @anthropic-ai/claude-code`, confirm before install), check auth (`claude auth status --json` if available — verify subcommand at impl time, else cheap `claude -p` probe), verify hooks trusted/ran, explain parent-sandbox requirements, toggle review gate (flag file).
+3. **rescue** — delegate task. Flags: `--model <opus|sonnet|haiku|fable|full-id>`, `--resume <claude-session-id>`, `--fresh`, `--yolo`, `--background`. Runs `claude -p --permission-mode acceptEdits --output-format stream-json --verbose`, task text via stdin. Surfaces Claude session id for later `--resume`.
+4. **transfer** — `transfer.mjs` resolves transcript by **session id** recorded by SessionStart hook (cwd-match only as last resort — concurrent sessions in one repo would otherwise pick the wrong transcript). Extracts bounded evidence: user goal messages, files touched (tool calls), git state, last N exchanges — size limits + secret redaction. SKILL.md has **Codex itself** compose the handoff narrative from that evidence, write it via script (stdin) to state dir; script prints a safely-quoted launch command reading the file (no `$(cat ...)` interpolation, leading-dash safe).
+5. **status / result / cancel** — `jobs.mjs` over per-workspace job dir. Liveness = pid + start-time match (guards pid reuse). Cancel = SIGTERM to supervisor (see lifecycle below).
+6. **setup** — check `claude` on PATH (offer `npm i -g @anthropic-ai/claude-code`, confirm first), auth via `claude auth status --json`, verify SessionStart hook actually ran/trusted (probe state store), explain sandbox requirements (constraint 5), toggle review gate (flag file).
 
 ## Background jobs
 
-`run-claude.mjs --background` spawns detached `supervisor.mjs` (own process group). Supervisor runs `claude`, streams to `<id>.log`, and atomically finalizes `<id>.json` (exit code, result text, Claude session id, timestamps) even after launcher exits. Job records store argv summary, never full prompt text. Retention: prune finished jobs >7 days on each `jobs.mjs` run.
+`run-claude.mjs --background` spawns detached `supervisor.mjs` (own process group). Supervisor runs `claude`, streams to `<id>.log` (bounded size; logs may contain prompts/source — `0600`), atomically finalizes `<id>.json` (exit code, result, Claude session id, timestamps). **Cancellation lifecycle:** supervisor traps SIGTERM → forwards to Claude child → waits (bounded) → writes final record `status:"cancelled"` → exits. Job records store argv summary only, never prompt text. Retention: prune finished jobs >7 days on each `jobs.mjs` run.
 
 ## Hooks (`hooks/hooks.json`, convention-discovered)
 
-- **SessionStart** → `session_start.mjs`: record transcript path + cwd + thread id into `$PLUGIN_DATA` (hooks DO get the env var), keyed by thread.
-- **Stop review gate (off by default)** → `stop_review_gate.mjs`: if gate flag enabled and `stop_hook_active` false, run locked-down `claude -p` review of Codex's last output; on findings emit `{"decision":"block","reason":"<feedback>"}` exit 0. README warns about review-loop token drain (mirrors original's warning).
+- **SessionStart** → `session_start.mjs`: key state by hook-stdin `session_id` (equals scripts' `CODEX_THREAD_ID` — contract-tested); record transcript path (nullable), cwd.
+- **Stop review gate (off by default)** → `stop_review_gate.mjs`: if gate flag enabled and `stop_hook_active` false, run locked-down reviewer (`--safe-mode --tools ""`, evidence precomputed, structured JSON verdict) with own timeout well under Codex's 10-min hook default, plus output caps. **Fail-open** on auth failure, timeout, or unparseable verdict — never block on infrastructure errors. On findings: exit 0 + `{"decision":"block","reason":"<feedback>"}`. README: token-drain + runs-outside-sandbox warnings.
 
 ## Error handling
 
-- `claude` missing → scripts exit non-zero with pointer to `@claude:setup`.
+- `claude` missing → scripts exit non-zero pointing to `$claude:setup`.
 - Auth missing → surface login instructions verbatim.
-- Codex sandbox denial (network/home writes) → detect common failure signatures, explain requirement.
+- Codex sandbox denial (network / `~/.claude` / state-dir writes) → detect common failure signatures, explain requirement.
 - Background job dies → supervisor records exit code; `result` shows stderr tail.
 - Transfer with no matching session → list candidates for user choice.
 
 ## Verification
 
-1. `npm test` (node:test): state resolver partitioning + atomic writes; jobs lifecycle with fake-claude fixture (argv assertions, stream-json fixtures); supervisor finalization + cancel; transfer extraction from fixture Codex JSONL (incl. redaction, size caps); pid-reuse guard.
-2. Official plugin validation (plugin-creator `validate_plugin.py` / `@plugin-creator` skill) passes on manifest + layout.
-3. Manual smoke: `codex plugin marketplace add /Users/colombov/git/cc-plugin-codex`, `codex plugin add claude@<marketplace>`, **new session**, approve hooks, then: `@claude:setup`; `@claude:review` on dirty repo — confirm zero workspace writes (snapshot before/after); `@claude:rescue` trivial edit; background job + `@claude:status`/`result`/`cancel`; `@claude:transfer` → run emitted command; enable gate, confirm block + no infinite loop.
+1. `npm test` (node:test): state resolver (hook-env vs derived path equality, partitioning, atomic + symlink-safe writes, perms); jobs lifecycle with fake-claude fixture (argv assertions incl. `--verbose`, stream-json fixtures); supervisor finalization incl. SIGTERM-cancel path; transfer extraction from fixture Codex JSONL (redaction, caps, session-id resolution); pid-reuse guard; session_id ↔ `CODEX_THREAD_ID` correlation contract test.
+2. Official plugin validation (`$plugin-creator` / `validate_plugin.py`) passes.
+3. Manual smoke: `codex plugin marketplace add /Users/colombov/git/cc-plugin-codex`, `codex plugin add claude@cc-plugin-codex`, **new session**, approve hooks. Then: `$claude:setup`; `$claude:review` on dirty repo — zero workspace writes (before/after snapshot); `$claude:rescue` trivial edit; background job + `$claude:status`/`result`/`cancel` (verify cancelled record finalized); `$claude:transfer` → run emitted command; gate on → confirm block + no loop + fail-open on forced timeout. Repeat key paths under read-only vs workspace-write sandbox modes and with approval denied; verify supervisor survives launcher exit and Codex exit.
 
 ## Marketplace entry
 
@@ -98,15 +100,10 @@ cc-plugin-codex/
   "plugins": [{
     "name": "claude",
     "source": { "source": "local", "path": "./plugins/claude" },
-    "policy": { "installation": "AVAILABLE" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
     "category": "Productivity"
   }]
 }
 ```
 
 (Git source consumers use `codex plugin marketplace add <owner>/cc-plugin-codex`.)
-
-## Open items (resolve at implementation time)
-
-- Confirm exact Codex plugin data-dir convention for the state resolver (`~/.codex/plugins/data/<plugin>/` assumed; verify against codex-rs loader).
-- Confirm whether `claude auth status --json` exists in the installed Claude Code version; otherwise use a cheap `claude -p` probe for the auth check in `@claude:setup`.
