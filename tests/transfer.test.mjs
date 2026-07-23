@@ -57,6 +57,39 @@ test('extract resolves transcript via SessionStart record', () => {
   assert.equal(ev.goals[0].text, 'the goal');
 });
 
+test('extract streams a large transcript file without loading it whole', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tr-'));
+  const transcript = join(dir, 'session.jsonl');
+  const lines = [];
+  for (let i = 0; i < 20_000; i++) {
+    if (i % 2 === 0) {
+      lines.push(JSON.stringify({ type: 'message', role: 'user', content: `user turn ${i}` }));
+    } else {
+      lines.push(JSON.stringify({ type: 'message', role: 'assistant', content: `assistant turn ${i}` }));
+    }
+    if (i === 10_000) {
+      lines.push(JSON.stringify({
+        payload: {
+          type: 'custom_tool_call',
+          arguments: '*** Begin Patch\n*** Update File: src/streamed.js\n@@\n-old\n+new\n*** End Patch',
+        },
+      }));
+    }
+  }
+  writeFileSync(transcript, lines.join('\n') + '\n');
+  const env = { ...process.env, CODEX_HOME: join(dir, '.codex'), CODEX_THREAD_ID: 'th-stream' };
+  const dataDir = resolveDataDir({ env });
+  writeJsonAtomic(join(sessionsDir(dataDir), 'th-stream.json'),
+    { sessionId: 'th-stream', transcriptPath: transcript, cwd: dir });
+  const out = execFileSync('node', [SCRIPT, 'extract'], { cwd: dir, env, encoding: 'utf8' });
+  const ev = JSON.parse(out);
+  assert.equal(ev.sessionId, 'th-stream');
+  assert.ok(ev.goals.length <= 3);
+  assert.ok(ev.recent.length <= 20);
+  assert.equal(ev.goals[0].text, 'user turn 0');
+  assert.ok(ev.filesTouched.includes('src/streamed.js'));
+});
+
 test('write-handoff prepends header and prints launch command; launch passes content as argv', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tr-'));
   const env = { ...process.env, CODEX_HOME: join(dir, '.codex') };
@@ -158,6 +191,27 @@ test('redact consumes the whole secret value, not just one token', () => {
   assert.ok(!s.includes('abcd1234'));
   assert.ok(!s.includes('correct horse battery staple'));
   assert.ok(!s.includes('AbC123.def-456_GHI'));
+});
+
+test('redact is escape-aware for quoted values and does not cross newlines', () => {
+  const s1 = redact('password="alpha \\"beta\\" gamma" tail');
+  assert.ok(!s1.includes('beta'));
+  assert.ok(!s1.includes('gamma'));
+  assert.ok(!s1.includes('gamma" tail'));
+
+  const s2 = redact('Authorization:\nSecondLine');
+  assert.ok(s2.includes('SecondLine'));
+
+  const s3 = redact('Bearer\nSecondLine');
+  assert.ok(s3.includes('SecondLine'));
+
+  const s4 = redact('Authorization: secretvalue\nSecondLine');
+  assert.ok(!s4.includes('secretvalue'));
+  assert.match(s4, /\[REDACTED\]\nSecondLine/);
+
+  const s5 = redact('Bearer abc123\nSecondLine');
+  assert.ok(!s5.includes('abc123'));
+  assert.match(s5, /\[REDACTED\]\nSecondLine/);
 });
 
 test('fallback scan matches cwd beyond the 20 newest sessions', () => {

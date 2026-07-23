@@ -2,8 +2,10 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
-  closeSync, existsSync, lstatSync, openSync, readFileSync, readdirSync, readSync, writeFileSync,
+  closeSync, createReadStream, existsSync, lstatSync, openSync, readFileSync, readdirSync,
+  readSync, writeFileSync,
 } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -27,12 +29,14 @@ const REDACT_PATTERNS = [
   /\bnpm_[A-Za-z0-9]{30,}\b/g,
   /\bAIza[0-9A-Za-z_-]{35}\b/g,
   /\bglpat-[0-9A-Za-z_-]{20,}\b/g,
-  /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\s*[=:]\s*(?:"[^"]*"|'[^']*'|\S+)/gi,
+  /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)[ \t]*[=:][ \t]*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/gi,
   // Authorization line must run before the bare-Bearer pattern below, so a
   // "Bearer ..." token inside a header line is consumed by the whole-line
   // rule instead of leaking whatever the narrower Bearer rule leaves behind.
-  /\bAuthorization\s*:\s*.+/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  // Separators are horizontal-only ([ \t]) so a match can't cross a newline
+  // and redact an unrelated following line.
+  /\bAuthorization[ \t]*:[ \t]*.+/gi,
+  /\bBearer[ \t]+[A-Za-z0-9._~+/=-]+/gi,
   /\b(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*\d)[A-Za-z0-9+/=_-]{40,}\b/g,
 ];
 
@@ -72,28 +76,44 @@ function findPaths(node, out, depth = 0) {
   }
 }
 
-export function extractEvidence(jsonlText) {
-  const msgs = [];
+// Bounded accumulator: holds only the first 3 user messages (goals), a ring
+// buffer of the last MAX_RECENT messages, and up to MAX_FILES paths — never
+// the whole transcript — so a huge rollout can be streamed line-by-line
+// without loading it into memory.
+export function makeEvidenceAccumulator() {
+  const goals = [];
+  const recent = [];
   const files = new Set();
-  for (const line of jsonlText.split('\n')) {
+
+  function pushLine(line) {
     let e;
-    try { e = JSON.parse(line); } catch { continue; }
+    try { e = JSON.parse(line); } catch { return; }
     const node = e.payload ?? e;
-    findPaths(node, files);
+    if (files.size < MAX_FILES) findPaths(node, files);
     const role = node.role;
     const text = flattenText(node);
-    if (!text || (role !== 'user' && role !== 'assistant')) continue;
-    msgs.push({ role, text: redact(text).slice(0, MSG_CAP) });
+    if (!text || (role !== 'user' && role !== 'assistant')) return;
+    const msg = { role, text: redact(text).slice(0, MSG_CAP) };
+    if (role === 'user' && goals.length < 3) goals.push(msg);
+    recent.push(msg);
+    if (recent.length > MAX_RECENT) recent.shift();
   }
-  const evidence = {
-    goals: msgs.filter((m) => m.role === 'user').slice(0, 3),
-    recent: msgs.slice(-MAX_RECENT),
-    filesTouched: [...files].slice(0, MAX_FILES),
-  };
-  while (JSON.stringify(evidence).length > TOTAL_CAP && evidence.recent.length > 1) {
-    evidence.recent.shift();
+
+  function finalize() {
+    const evidence = { goals, recent, filesTouched: [...files].slice(0, MAX_FILES) };
+    while (JSON.stringify(evidence).length > TOTAL_CAP && evidence.recent.length > 1) {
+      evidence.recent.shift();
+    }
+    return evidence;
   }
-  return evidence;
+
+  return { pushLine, finalize };
+}
+
+export function extractEvidence(jsonlText) {
+  const acc = makeEvidenceAccumulator();
+  for (const line of jsonlText.split('\n')) acc.pushLine(line);
+  return acc.finalize();
 }
 
 function walkJsonl(root, out = []) {
@@ -145,7 +165,7 @@ function resolveTranscript(env = process.env) {
   return { candidates: matches.slice(0, 20).map((m) => m.path), sessionId };
 }
 
-function cmdExtract() {
+async function cmdExtract() {
   const res = resolveTranscript();
   if (!res.transcriptPath) {
     process.stderr.write('Could not resolve the current Codex transcript.\n');
@@ -154,7 +174,12 @@ function cmdExtract() {
     }
     process.exit(2);
   }
-  const evidence = extractEvidence(readFileSync(res.transcriptPath, 'utf8'));
+  const acc = makeEvidenceAccumulator();
+  const rl = createInterface({
+    input: createReadStream(res.transcriptPath, { encoding: 'utf8' }), crlfDelay: Infinity,
+  });
+  for await (const line of rl) acc.pushLine(line);
+  const evidence = acc.finalize();
   process.stdout.write(JSON.stringify({
     sessionId: res.sessionId, transcriptPath: res.transcriptPath, ...evidence,
   }, null, 2) + '\n');
@@ -201,7 +226,7 @@ function cmdLaunch(path) {
 
 const [cmd, arg] = process.argv.slice(2);
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (cmd === 'extract') cmdExtract();
+  if (cmd === 'extract') await cmdExtract();
   else if (cmd === 'write-handoff') await cmdWriteHandoff();
   else if (cmd === 'launch' && arg) cmdLaunch(arg);
   else { process.stderr.write('Usage: transfer.mjs extract | write-handoff | launch <path>\n'); process.exit(2); }
