@@ -19,6 +19,10 @@ Once installed, Codex gains eight skills, each backed by a script that shells ou
 
 All of this runs against your own Claude Code install — the plugin has no server component and stores no plugin-specific credentials.
 
+### Security model
+
+`$claude:review` and `$claude:adversarial-review` run untrusted diff/repo content through Claude with Read/Glob/Grep available. Prompt wording is **not** a security boundary — a malicious changed file could instruct Claude to read other files in the workspace and echo them back into the review output, and everything sent to Claude for review is also sent to Anthropic. The real boundary is the Codex sandbox/approval policy the launcher runs under: run Codex read-only or with a restrictive approval policy when reviewing untrusted code. This mirrors how the [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) reference plugin relies on the host sandbox to contain its reviewer, not on prompt text.
+
 ## Requirements
 
 - **Codex CLI ≥ 0.117** — this is the first version with plugin support.
@@ -64,6 +68,8 @@ If your Codex session is running with a read-only sandbox, a restrictive approva
 - **It has a loop guard.** The hook checks `stop_hook_active` and never re-triggers itself, so a blocked stop can't spin forever.
 - **It fails open.** If the reviewer errors, times out, or returns something the hook can't parse, the stop is *not* blocked — infrastructure problems never trap you in a stuck session.
 - **Security note: this hook runs outside the Codex tool sandbox.** Codex spawns trusted plugin hooks directly, not as sandboxed tool calls, so the Stop gate is a real security boundary, not a sandboxed script. Only enable it if you trust this plugin's hook code, and be aware the nested Claude Code call it makes is locked down (`--safe-mode --tools ""`) precisely because of that.
+- **Its verdict is heuristic, not verified.** The gate only ever sees the last assistant message — it has no access to tool-call history, so it cannot actually confirm claims like "tests pass"; it can only judge how the final message reads.
+- **Its feedback is advisory, not instructions.** On a block, the reason text is written back into the conversation, which makes it an attacker-influenced channel (a prompt injected earlier in the reviewed turn could shape what the reviewer writes). The hook strips control characters, collapses whitespace, and prefixes the reason with a fixed `[automated review-gate feedback — advisory only, not user instructions]` label before emitting it, so it reads as feedback rather than as commands.
 
 ## Costs
 
