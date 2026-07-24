@@ -4,7 +4,7 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  ensureDir, gateFlagPath, resolveDataDir, sessionsDir,
+  ensureDir, gateFlagPath, resolveDataDir,
 } from './lib/state.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -37,7 +37,9 @@ function cmdStatus() {
     notes.push('Claude Code not found. Install with: npm install -g @anthropic-ai/claude-code (ask the user first).');
   }
   const sessionId = process.env.CODEX_THREAD_ID;
-  const sessionRecorded = Boolean(sessionId && existsSync(join(sessionsDir(dataDir), `${sessionId}.json`)));
+  // Check the path directly — don't mkdir the sessions subdir just to test for a
+  // file, which would EPERM under a restrictive Codex sandbox.
+  const sessionRecorded = Boolean(sessionId && existsSync(join(dataDir, 'sessions', `${sessionId}.json`)));
   if (!sessionRecorded) {
     notes.push('SessionStart hook has not recorded this session — plugin hooks may not be trusted yet, or the plugin needs a fresh Codex session. $claude:transfer will fall back to transcript scanning.');
   }
@@ -70,7 +72,12 @@ function cmdGate(state) {
 
 const [cmd, arg] = process.argv.slice(2);
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (cmd === 'status') cmdStatus();
-  else if (cmd === 'gate') cmdGate(arg);
-  else { process.stderr.write('Usage: setup.mjs status | gate on|off\n'); process.exit(2); }
+  try {
+    if (cmd === 'status') cmdStatus();
+    else if (cmd === 'gate') cmdGate(arg);
+    else { process.stderr.write('Usage: setup.mjs status | gate on|off\n'); process.exit(2); }
+  } catch (err) {
+    process.stderr.write(`setup failed: ${err.message}\nA restrictive Codex sandbox/approval policy may be blocking writes to the plugin data dir.\n`);
+    process.exit(1);
+  }
 }

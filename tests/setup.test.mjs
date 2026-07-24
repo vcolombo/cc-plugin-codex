@@ -53,3 +53,11 @@ test('status reports a clean error when the data dir cannot be created', () => {
   assert.match(res.stderr, /Cannot create plugin data dir/);
   assert.doesNotMatch(res.stderr, /at cmdStatus|node:internal/);
 });
+
+test('status does not create the sessions dir just to check sessionRecorded', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const env = { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: join(dir, '.codex'), CODEX_THREAD_ID: 'th-x' };
+  execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' });
+  const dataDir = resolveDataDir({ env });
+  assert.equal(existsSync(join(dataDir, 'sessions')), false, 'status must not mkdir the sessions subdir');
+});
