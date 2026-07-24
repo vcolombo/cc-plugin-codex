@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,20 @@ test('gate on/off toggles the flag file', () => {
   assert.equal(existsSync(gateFlagPath(resolveDataDir({ env }))), true);
   execFileSync('node', [SCRIPT, 'gate', 'off'], { cwd: dir, env });
   assert.equal(existsSync(gateFlagPath(resolveDataDir({ env }))), false);
+});
+
+test('gate on does not follow a symlink planted at the flag path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const env = envFor(dir);
+  const flag = gateFlagPath(resolveDataDir({ env })); // ensureDataDirOrExit creates the dir on gate on; pre-create it here
+  mkdirSync(join(flag, '..'), { recursive: true });
+  const target = join(dir, 'attacker-target');
+  writeFileSync(target, 'ORIGINAL');
+  symlinkSync(target, flag); // plant a symlink where the flag would go
+  execFileSync('node', [SCRIPT, 'gate', 'on'], { cwd: dir, env });
+  assert.equal(readFileSync(target, 'utf8'), 'ORIGINAL', 'the symlink target must not be written through');
+  assert.equal(lstatSync(flag).isSymbolicLink(), false, 'the flag path is now a regular file, not the symlink');
+  assert.equal(readFileSync(flag, 'utf8'), 'on\n');
 });
 
 test('status reports a clean error when the data dir cannot be created', () => {

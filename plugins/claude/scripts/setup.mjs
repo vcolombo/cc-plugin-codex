@@ -62,7 +62,11 @@ function cmdGate(state) {
   ensureDataDirOrExit(dataDir);
   const flag = gateFlagPath(dataDir);
   if (state === 'on') {
-    writeFileSync(flag, 'on\n', { mode: 0o600 });
+    // Drop any existing entry first, then create with 'wx' so the write can't
+    // follow a symlink planted at the flag path (matches the plugin's other
+    // credential/state writes).
+    rmSync(flag, { force: true });
+    writeFileSync(flag, 'on\n', { flag: 'wx', mode: 0o600 });
     process.stdout.write('Review gate enabled. Warning: every Codex stop now triggers a Claude review — this costs tokens and can loop with long turns.\n');
   } else if (state === 'off') {
     rmSync(flag, { force: true });
