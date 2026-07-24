@@ -96,7 +96,9 @@ No external dependencies; tests use Node's built-in test runner.
 npm test
 ```
 
-## Manual smoke checklist
+### Manual smoke checklist
+
+For maintainers re-validating a change (the automated suite can't reach the real Codex/Claude runtime). Run against a real Codex 0.145+ and Claude Code install:
 
 1. `codex plugin marketplace add /path/to/cc-plugin-codex`
 2. Install plugin `claude` from the `cc-plugin-codex` marketplace; start a NEW Codex session; approve hooks.
