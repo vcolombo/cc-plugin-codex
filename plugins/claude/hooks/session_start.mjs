@@ -13,14 +13,18 @@ process.stdin.on('end', () => {
   try {
     let evt = {};
     try { evt = JSON.parse(input); } catch { /* fail-open */ }
-    if (!evt.session_id) process.exit(0);
-    const dataDir = resolveDataDir({ env: process.env });
-    writeJsonAtomic(join(sessionsDir(dataDir), `${evt.session_id}.json`), {
-      sessionId: evt.session_id,
-      transcriptPath: evt.transcript_path ?? null,
-      cwd: evt.cwd ?? process.cwd(),
-      recordedAt: new Date().toISOString(),
-    });
+    if (evt.session_id) {
+      const dataDir = resolveDataDir({ env: process.env });
+      writeJsonAtomic(join(sessionsDir(dataDir), `${evt.session_id}.json`), {
+        sessionId: evt.session_id,
+        transcriptPath: evt.transcript_path ?? null,
+        cwd: evt.cwd ?? process.cwd(),
+        recordedAt: new Date().toISOString(),
+      });
+    }
   } catch { /* fail-open: recording is best-effort */ }
+  // Codex 0.145 parses hook stdout as JSON; empty output is an invalid-hook
+  // error. Emit a valid empty object in every path.
+  process.stdout.write('{}\n');
   process.exit(0);
 });

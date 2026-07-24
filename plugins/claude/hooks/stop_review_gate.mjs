@@ -39,16 +39,23 @@ process.stdin.on('end', () => {
   try {
     main(JSON.parse(input));
   } catch {
-    process.exit(0); // fail-open
+    noAction(); // fail-open
   }
 });
 
+// Codex 0.145 parses the hook's stdout as JSON; empty output is reported as an
+// invalid-hook error. Emit a valid empty object to mean "no decision, proceed".
+function noAction() {
+  process.stdout.write('{}\n');
+  process.exit(0);
+}
+
 function main(evt) {
   const dataDir = resolveDataDir({ env: process.env });
-  if (!existsSync(gateFlagPath(dataDir))) process.exit(0);
-  if (evt.stop_hook_active) process.exit(0); // prevent review loops
+  if (!existsSync(gateFlagPath(dataDir))) noAction();
+  if (evt.stop_hook_active) noAction(); // prevent review loops
   const message = evt.last_assistant_message;
-  if (!message) process.exit(0); // nullable per Codex hook contract
+  if (!message) noAction(); // nullable per Codex hook contract
 
   const prompt = [
     'You are a strict review gate for another coding agent. Assess the agent turn',
@@ -67,19 +74,17 @@ function main(evt) {
     ['-p', '--safe-mode', '--tools', '', '--no-session-persistence'],
     { input: prompt, encoding: 'utf8', timeout: TIMEOUT_MS },
   );
-  if (res.error || res.status !== 0) process.exit(0); // fail-open
+  if (res.error || res.status !== 0) noAction(); // fail-open
 
   let verdict;
   try {
     verdict = JSON.parse(res.stdout.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
   } catch {
-    process.exit(0); // fail-open
+    noAction(); // fail-open
   }
   if (verdict.pass === false && Object.hasOwn(REASONS, verdict.category)) {
-    process.stdout.write(JSON.stringify({
-      decision: 'block',
-      reason: REASONS[verdict.category],
-    }));
+    process.stdout.write(`${JSON.stringify({ decision: 'block', reason: REASONS[verdict.category] })}\n`);
+    process.exit(0);
   }
-  process.exit(0);
+  noAction();
 }
