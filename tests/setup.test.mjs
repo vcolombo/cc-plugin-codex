@@ -68,12 +68,18 @@ test('status explains the sandbox/Keychain cause when claude reports logged out'
   delete env.ANTHROPIC_API_KEY;
   const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
   assert.equal(out.auth.loggedIn, false);
-  assert.ok(out.notes.some((n) => /Keychain/.test(n) && /ANTHROPIC_API_KEY/.test(n)), 'expected a Keychain/sandbox auth note');
+  // Note must offer both the OAuth-token (subscription) and API-key paths.
+  assert.ok(out.notes.some((n) => /Keychain/.test(n) && /CLAUDE_CODE_OAUTH_TOKEN/.test(n) && /setup-token/.test(n) && /ANTHROPIC_API_KEY/.test(n)), 'expected a Keychain/sandbox auth note with OAuth + API-key fixes');
 });
 
-test('status does not add the logged-out note when ANTHROPIC_API_KEY is set', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
-  const env = { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: join(dir, '.codex'), FAKE_CLAUDE_LOGGED_OUT: '1', ANTHROPIC_API_KEY: 'sk-test' };
-  const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
-  assert.ok(!out.notes.some((n) => /Keychain/.test(n)), 'no Keychain note when an API key is set');
+test('status does not add the logged-out note when an auth env var is set', () => {
+  const base = { ...process.env, CLAUDE_BIN: FAKE, FAKE_CLAUDE_LOGGED_OUT: '1' };
+  delete base.ANTHROPIC_API_KEY;
+  delete base.CLAUDE_CODE_OAUTH_TOKEN;
+  for (const key of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {
+    const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+    const env = { ...base, CODEX_HOME: join(dir, '.codex'), [key]: 'x-test' };
+    const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
+    assert.ok(!out.notes.some((n) => /Keychain/.test(n)), `no Keychain note when ${key} is set`);
+  }
 });

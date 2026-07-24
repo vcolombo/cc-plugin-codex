@@ -63,10 +63,11 @@ Skill-launched scripts (`review`, `rescue`, `transfer`, etc.) run as ordinary Co
 
 If you log into Claude Code with a claude.ai / Claude Max account, the token is stored in the **macOS Keychain**, and Codex's sandbox blocks Keychain access for the processes it spawns. The practical effect: even when you are logged in at the machine level, a skill running under a restricted sandbox sees `claude auth status` as **logged out**, and nested `claude` fails with `Not logged in`. `$claude:setup` will flag this.
 
-Two ways to make Claude auth reachable from inside Codex:
+Three ways to make Claude auth reachable from inside Codex (any one works; the plugin's scripts pass your environment straight through to nested `claude`):
 
-- **Run Codex with elevated access for Claude skills** — a full-access / sandbox-bypass profile (or an approval mode that permits Keychain) lets nested `claude` reach the Keychain token. Verified: nested `claude -p` works under full access and fails under `workspace-write`.
-- **Authenticate Claude Code via `ANTHROPIC_API_KEY`** — an env var is read directly and never touches the Keychain, so it works under the sandbox. Set it in the environment your Codex session inherits.
+- **OAuth token via `CLAUDE_CODE_OAUTH_TOKEN` (recommended for claude.ai / Max / Pro).** Run `claude setup-token` once — it mints a long-lived OAuth token tied to your Claude *subscription* (not API billing) — then export it as `CLAUDE_CODE_OAUTH_TOKEN` in the environment your Codex session inherits. It's read from the env, never the Keychain, so it works under the sandbox while still billing against your subscription.
+- **`ANTHROPIC_API_KEY`.** An API key is read directly from the env and never touches the Keychain, so it also works under the sandbox. This bills as API usage rather than your subscription.
+- **Run Codex with elevated access for Claude skills.** A full-access / sandbox-bypass profile (or an approval mode that permits Keychain) lets nested `claude` reach the Keychain token directly. Verified: nested `claude -p` works under full access and fails under `workspace-write`.
 
 If your Codex session is running with a read-only sandbox, a restrictive approval policy, or no network, expect to see approval prompts or outright failures from these skills — that's expected and by design, not a bug. The skills detect a missing `claude` binary and point you at `$claude:setup`; other sandbox failures (no network, denied write, blocked Keychain) surface as the underlying command's own error.
 
