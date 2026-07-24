@@ -43,10 +43,11 @@ process.stdin.on('end', () => {
   }
 });
 
-// Codex 0.145 parses the hook's stdout as JSON; empty output is reported as an
-// invalid-hook error. Emit a valid empty object to mean "no decision, proceed".
+// Codex validates Stop hook stdout as JSON; empty output — and even a bare {} on
+// newer Codex — is rejected as "invalid stop hook JSON output". {"continue":true}
+// is the accepted no-op shape. Never include hookSpecificOutput on a Stop hook.
 function noAction() {
-  process.stdout.write('{}\n');
+  process.stdout.write('{"continue":true}\n');
   process.exit(0);
 }
 

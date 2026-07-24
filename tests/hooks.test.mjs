@@ -39,15 +39,15 @@ test('session_start tolerates missing session_id and null transcript', () => {
 test('gate is silent when flag is off', () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
   const out = run(GATE, { session_id: 's1', stop_hook_active: false, last_assistant_message: 'hi' }, { PLUGIN_DATA: dataDir });
-  assert.deepEqual(JSON.parse(out), {});
+  assert.deepEqual(JSON.parse(out), { continue: true });
 });
 
 test('gate is silent when stop_hook_active or message is null', () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
   writeFileSync(gateFlagPath(dataDir), 'on\n');
   const env = { PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE };
-  assert.deepEqual(JSON.parse(run(GATE, { stop_hook_active: true, last_assistant_message: 'hi' }, env)), {});
-  assert.deepEqual(JSON.parse(run(GATE, { stop_hook_active: false, last_assistant_message: null }, env)), {});
+  assert.deepEqual(JSON.parse(run(GATE, { stop_hook_active: true, last_assistant_message: 'hi' }, env)), { continue: true });
+  assert.deepEqual(JSON.parse(run(GATE, { stop_hook_active: false, last_assistant_message: null }, env)), { continue: true });
 });
 
 test('gate blocks on failing verdict with local, non-forwarded reason', () => {
@@ -89,7 +89,7 @@ test('gate fails open on a non-allowlisted category', () => {
     CLAUDE_BIN: FAKE,
     FAKE_CLAUDE_PLAIN: '{"pass": false, "category": "malicious"}',
   });
-  assert.deepEqual(JSON.parse(out), {});
+  assert.deepEqual(JSON.parse(out), { continue: true });
 });
 
 test('gate fails open on reviewer crash and passing verdict', () => {
@@ -98,11 +98,11 @@ test('gate fails open on reviewer crash and passing verdict', () => {
   const crash = run(GATE, { stop_hook_active: false, last_assistant_message: 'x' }, {
     PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE, FAKE_CLAUDE_PLAIN: 'garbage', FAKE_CLAUDE_EXIT: '1',
   });
-  assert.deepEqual(JSON.parse(crash), {});
+  assert.deepEqual(JSON.parse(crash), { continue: true });
   const pass = run(GATE, { stop_hook_active: false, last_assistant_message: 'x' }, {
     PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE, FAKE_CLAUDE_PLAIN: '{"pass": true, "reason": "fine"}',
   });
-  assert.deepEqual(JSON.parse(pass), {});
+  assert.deepEqual(JSON.parse(pass), { continue: true });
 });
 
 test('gate caps an oversized event and fails open without crashing', () => {
@@ -118,7 +118,7 @@ test('gate caps an oversized event and fails open without crashing', () => {
     env: { ...process.env, PLUGIN_DATA: dataDir, CLAUDE_BIN: FAKE },
   });
   assert.equal(res.status, 0);
-  assert.deepEqual(JSON.parse(res.stdout), {});
+  assert.deepEqual(JSON.parse(res.stdout), { continue: true });
 });
 
 test('session_start caps an oversized event and exits 0 without crashing', () => {
@@ -145,17 +145,18 @@ test('session_start exits 0 even when the data dir is unwritable', () => {
   assert.equal(res.status, 0);
 });
 
-test('session_start always emits valid JSON on stdout (Codex hook contract)', () => {
+test('session_start emits the SessionStart hookSpecificOutput schema (Codex hook contract)', () => {
+  const expected = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: '' } };
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-'));
   const out = run(START, { session_id: 's-json', transcript_path: '/t/x.jsonl', cwd: '/w' }, { PLUGIN_DATA: dataDir });
-  assert.deepEqual(JSON.parse(out), {}); // parseable, no error
-  // and with no session_id
+  assert.deepEqual(JSON.parse(out), expected);
+  // and with no session_id (still must emit the schema, not empty/bare {})
   const out2 = run(START, { transcript_path: null }, { PLUGIN_DATA: dataDir });
-  assert.deepEqual(JSON.parse(out2), {});
+  assert.deepEqual(JSON.parse(out2), expected);
 });
 
 test('stop gate emits valid JSON on the no-action path (Codex hook contract)', () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hook-')); // gate flag absent → no action
   const out = run(GATE, { stop_hook_active: false, last_assistant_message: 'hi' }, { PLUGIN_DATA: dataDir });
-  assert.deepEqual(JSON.parse(out), {});
+  assert.deepEqual(JSON.parse(out), { continue: true });
 });

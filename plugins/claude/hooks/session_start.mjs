@@ -23,8 +23,11 @@ process.stdin.on('end', () => {
       });
     }
   } catch { /* fail-open: recording is best-effort */ }
-  // Codex 0.145 parses hook stdout as JSON; empty output is an invalid-hook
-  // error. Emit a valid empty object in every path.
-  process.stdout.write('{}\n');
+  // Codex validates SessionStart hook stdout against this exact schema; empty,
+  // plain text, or a bare {} are all rejected as "invalid session start JSON
+  // output". additionalContext is empty so we inject nothing into the session.
+  process.stdout.write(`${JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: '' },
+  })}\n`);
   process.exit(0);
 });
