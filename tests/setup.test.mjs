@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,8 +68,39 @@ test('status explains the sandbox/Keychain cause when claude reports logged out'
   delete env.ANTHROPIC_API_KEY;
   const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
   assert.equal(out.auth.loggedIn, false);
-  // Note must offer both the OAuth-token (subscription) and API-key paths.
-  assert.ok(out.notes.some((n) => /Keychain/.test(n) && /CLAUDE_CODE_OAUTH_TOKEN/.test(n) && /setup-token/.test(n) && /ANTHROPIC_API_KEY/.test(n)), 'expected a Keychain/sandbox auth note with OAuth + API-key fixes');
+  // Note must explain the Keychain cause and point at the guided flow + env vars.
+  assert.ok(out.notes.some((n) => /Keychain/.test(n) && /\$claude:setup/.test(n) && /CLAUDE_CODE_OAUTH_TOKEN/.test(n) && /ANTHROPIC_API_KEY/.test(n) && /\.codex\/\.env/.test(n)), 'expected a Keychain note pointing at the guided auth flow');
+});
+
+test('env-help scaffolds ~/.codex/.env and never emits a secret', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const codexHomeDir = join(dir, '.codex');
+  const env = { ...process.env, CODEX_HOME: codexHomeDir };
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  const out = JSON.parse(execFileSync('node', [SCRIPT, 'env-help', 'oauth'], { cwd: dir, env, encoding: 'utf8' }));
+  assert.equal(out.varName, 'CLAUDE_CODE_OAUTH_TOKEN');
+  assert.equal(out.envPath, join(codexHomeDir, '.env'));
+  assert.equal(out.envFileCreated, true);
+  assert.equal(out.alreadyPresentInFile, false);
+  assert.equal(out.alreadyPresentInEnv, false);
+  assert.ok(out.steps.some((s) => /claude setup-token/.test(s)));
+  // the created file is empty (no secret written) and 0600
+  assert.equal(readFileSync(join(codexHomeDir, '.env'), 'utf8'), '');
+  assert.equal(statSync(join(codexHomeDir, '.env')).mode & 0o777, 0o600);
+});
+
+test('env-help apikey detects an already-present var and does not clobber the file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const codexHomeDir = join(dir, '.codex');
+  mkdirSync(codexHomeDir, { recursive: true });
+  writeFileSync(join(codexHomeDir, '.env'), 'ANTHROPIC_API_KEY=already\nFOO=bar\n');
+  const out = JSON.parse(execFileSync('node', [SCRIPT, 'env-help', 'apikey'], {
+    cwd: dir, env: { ...process.env, CODEX_HOME: codexHomeDir }, encoding: 'utf8',
+  }));
+  assert.equal(out.varName, 'ANTHROPIC_API_KEY');
+  assert.equal(out.envFileCreated, false);
+  assert.equal(out.alreadyPresentInFile, true);
+  assert.equal(readFileSync(join(codexHomeDir, '.env'), 'utf8'), 'ANTHROPIC_API_KEY=already\nFOO=bar\n'); // untouched
 });
 
 test('status does not add the logged-out note when an auth env var is set', () => {

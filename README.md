@@ -63,7 +63,9 @@ Skill-launched scripts (`review`, `rescue`, `transfer`, etc.) run as ordinary Co
 
 If you log into Claude Code with a claude.ai / Claude Max account, the token is stored in the **macOS Keychain**, and Codex's sandbox blocks Keychain access for the processes it spawns. The practical effect: even when you are logged in at the machine level, a skill running under a restricted sandbox sees `claude auth status` as **logged out**, and nested `claude` fails with `Not logged in`. `$claude:setup` will flag this.
 
-Three ways to make Claude auth reachable from inside Codex (any one works; the plugin's scripts pass your environment straight through to nested `claude`):
+**The easy path:** run `$claude:setup` and choose a method — it walks you through the steps below, scaffolds `~/.codex/.env`, and tells you exactly what to add. (For security it never handles the secret itself: you paste your token/key into `~/.codex/.env` directly, never into the chat.)
+
+Three ways to make Claude auth reachable from inside Codex (any one works; the plugin's scripts pass your environment straight through to nested `claude`, and Codex loads `~/.codex/.env` into every session — including sandboxed skill calls):
 
 - **OAuth token via `CLAUDE_CODE_OAUTH_TOKEN` (recommended for claude.ai / Max / Pro).** Run `claude setup-token` once — it mints a long-lived OAuth token tied to your Claude *subscription* (not API billing) — then export it as `CLAUDE_CODE_OAUTH_TOKEN` in the environment your Codex session inherits. It's read from the env, never the Keychain, so it works under the sandbox while still billing against your subscription.
 - **`ANTHROPIC_API_KEY`.** An API key is read directly from the env and never touches the Keychain, so it also works under the sandbox. This bills as API usage rather than your subscription.
