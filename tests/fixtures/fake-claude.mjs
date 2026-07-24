@@ -10,6 +10,10 @@ if (argv.includes('--version')) {
   process.exit(0);
 }
 if (argv[0] === 'auth') {
+  if (process.env.FAKE_CLAUDE_LOGGED_OUT) {
+    console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' }));
+    process.exit(1); // real claude exits non-zero when logged out but still prints JSON
+  }
   console.log(JSON.stringify({ loggedIn: true, method: 'fake' }));
   process.exit(0);
 }

@@ -61,3 +61,19 @@ test('status does not create the sessions dir just to check sessionRecorded', ()
   const dataDir = resolveDataDir({ env });
   assert.equal(existsSync(join(dataDir, 'sessions')), false, 'status must not mkdir the sessions subdir');
 });
+
+test('status explains the sandbox/Keychain cause when claude reports logged out', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const env = { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: join(dir, '.codex'), FAKE_CLAUDE_LOGGED_OUT: '1' };
+  delete env.ANTHROPIC_API_KEY;
+  const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
+  assert.equal(out.auth.loggedIn, false);
+  assert.ok(out.notes.some((n) => /Keychain/.test(n) && /ANTHROPIC_API_KEY/.test(n)), 'expected a Keychain/sandbox auth note');
+});
+
+test('status does not add the logged-out note when ANTHROPIC_API_KEY is set', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'setup-'));
+  const env = { ...process.env, CLAUDE_BIN: FAKE, CODEX_HOME: join(dir, '.codex'), FAKE_CLAUDE_LOGGED_OUT: '1', ANTHROPIC_API_KEY: 'sk-test' };
+  const out = JSON.parse(execFileSync('node', [SCRIPT, 'status'], { cwd: dir, env, encoding: 'utf8' }));
+  assert.ok(!out.notes.some((n) => /Keychain/.test(n)), 'no Keychain note when an API key is set');
+});

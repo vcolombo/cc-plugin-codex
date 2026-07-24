@@ -57,8 +57,18 @@ Skill-launched scripts (`review`, `rescue`, `transfer`, etc.) run as ordinary Co
 - **Network access**, to talk to Anthropic's API.
 - **Write access to `~/.claude`**, Claude Code's own config/credentials directory.
 - **Write access to `~/.codex/plugins/data/claude-cc-plugin-codex`**, where this plugin keeps its own state (job records, transfer handoffs, session records).
+- **Access to your Claude Code credentials** (see below).
 
-If your Codex session is running with a read-only sandbox, a restrictive approval policy, or no network, expect to see approval prompts or outright failures from these skills — that's expected and by design, not a bug. The skills detect a missing `claude` binary and point you at `$claude:setup`; other sandbox failures (no network, denied write) surface as the underlying command's own error rather than a special-cased message.
+### Authentication under the sandbox (important)
+
+If you log into Claude Code with a claude.ai / Claude Max account, the token is stored in the **macOS Keychain**, and Codex's sandbox blocks Keychain access for the processes it spawns. The practical effect: even when you are logged in at the machine level, a skill running under a restricted sandbox sees `claude auth status` as **logged out**, and nested `claude` fails with `Not logged in`. `$claude:setup` will flag this.
+
+Two ways to make Claude auth reachable from inside Codex:
+
+- **Run Codex with elevated access for Claude skills** — a full-access / sandbox-bypass profile (or an approval mode that permits Keychain) lets nested `claude` reach the Keychain token. Verified: nested `claude -p` works under full access and fails under `workspace-write`.
+- **Authenticate Claude Code via `ANTHROPIC_API_KEY`** — an env var is read directly and never touches the Keychain, so it works under the sandbox. Set it in the environment your Codex session inherits.
+
+If your Codex session is running with a read-only sandbox, a restrictive approval policy, or no network, expect to see approval prompts or outright failures from these skills — that's expected and by design, not a bug. The skills detect a missing `claude` binary and point you at `$claude:setup`; other sandbox failures (no network, denied write, blocked Keychain) surface as the underlying command's own error.
 
 ## Review gate (off by default)
 

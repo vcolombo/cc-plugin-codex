@@ -33,6 +33,9 @@ function cmdStatus() {
     // Exits non-zero when logged out but still prints JSON: always parse stdout.
     const res = spawnSync(bin(), ['auth', 'status', '--json'], { encoding: 'utf8', input: '' });
     try { auth = JSON.parse(res.stdout.trim()); } catch { auth = { error: 'unparseable auth output' }; }
+    if (!auth?.loggedIn && !process.env.ANTHROPIC_API_KEY) {
+      notes.push('Claude reports logged out. If you ARE logged in at the machine level (claude.ai/Max), this is usually the Codex sandbox blocking Keychain access — the claude.ai token lives in the macOS Keychain, which a restricted sandbox denies. Fixes: run Codex with elevated access (e.g. a full-access/bypass profile) for Claude skills, or authenticate Claude Code via ANTHROPIC_API_KEY (env var, not Keychain). Otherwise run `claude` once and log in.');
+    }
   } else {
     notes.push('Claude Code not found. Install with: npm install -g @anthropic-ai/claude-code (ask the user first).');
   }
