@@ -2306,6 +2306,7 @@ git commit -m "docs: README with install, sandbox requirements, and smoke checkl
 - If Codex's real cache layout differs from `plugins/cache/<marketplace>/<plugin>/<version>` on the installed version, fix `resolveDataDir`'s regex AND its test together — the invariant that matters is: hook-provided `PLUGIN_DATA` and script-derived path MUST be equal for an installed plugin (smoke step 3 catches this via `sessionRecorded`).
 - If `claude --safe-mode` or `--tools` flags are named differently in the installed Claude Code version, check `claude --help` and update `buildClaudeArgs` + tests together. Do not silently drop the lockdown.
 - If the Stop hook JSON contract differs at smoke time (field names), adjust `stop_review_gate.mjs` reading side only; the block-output contract (`{"decision":"block","reason":...}`, exit 0) is verified against codex-rs.
+- The spec's rescue `--fresh` flag was intentionally dropped: a fresh session is already the default behavior (no `--resume` means fresh), so the flag would be a no-op.
 
 
 
