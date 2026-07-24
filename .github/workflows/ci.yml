@@ -8,10 +8,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Span the supported range (engines.node >=18.18); catches version-specific
+        # behavior like --test glob handling.
+        node-version: ['18.18', '20', '22']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
       # Zero runtime/dev dependencies — nothing to install; run the suite directly.
       - run: npm test
